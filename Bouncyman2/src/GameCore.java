@@ -6,6 +6,11 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 
+//(추가) O/X 퀴즈 시스템
+//- 별을 다 먹으면(스테이지 1~3) QUESTION 상태로 전환
+//- QuestionBox에서 문제 1개를 뽑아와 표시/정답 판정
+
+
 /**
  * GameCore
  * - 게임 루프, 더블 버퍼링, 입력 처리, 상태 전환 담당
@@ -28,7 +33,7 @@ public class GameCore {
         // SoundManager 초기화 (GameCore의 static 필드에 저장)
         soundManager = new SoundManager(); 
 
-        //  메인 메뉴 BGM 재생 요청 시작
+        //  메인 메뉴 BGM
         soundManager.playBGM(SoundManager.BGM_MAIN_MENU); 
         
         SwingUtilities.invokeLater(() -> {
@@ -39,8 +44,7 @@ public class GameCore {
             JPanel mainContainer = new JPanel(new CardLayout());
             
             GamePanel gamePanel = new GamePanel();
-            MenuPanel menuPanel = new MenuPanel(gamePanel, mainContainer); // GamePanel 참조 전달
-            // UI: PausePanel 초기화 호출
+            MenuPanel menuPanel = new MenuPanel(gamePanel, mainContainer);
             gamePanel.initPausePanel(mainContainer);
             
             mainContainer.add(menuPanel, CARD_MENU);
@@ -51,7 +55,6 @@ public class GameCore {
             frame.pack();
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
-            // panel.startGameThread(); 메뉴에서 호출
         });
     }
 
@@ -120,6 +123,9 @@ public class GameCore {
         // 문제/엔딩 관련
         private boolean waitingForQuestionAnswer = false;
         private boolean lastAnswerCorrect = false;
+        
+        // (추가) 현재 스테이지 퀴즈 (QuestionBox.java에서 뽑아옴)
+        private QuestionBox.Quiz currentQuiz;
 
         // 튜토리얼 도움말 표시 여부(H 키로 토글)
         private boolean tutorialOverlayVisible = true;
@@ -166,10 +172,7 @@ public class GameCore {
             backG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         }
 
-        /**
-         * 이미지 리소스 로딩
-         * - 실제 프로젝트에서는 image/ 폴더에 파일 배치 필요
-         */
+        /** 이미지 리소스 로딩 */
         private void loadImages() {
             try {
                 basicStandImg  = ImageIO.read(new File("image/alienBiege_stand.png"));
@@ -184,15 +187,13 @@ public class GameCore {
                 gemYellowImg   = ImageIO.read(new File("image/gemYellow.png"));
                 gemBlueImg     = ImageIO.read(new File("image/gemBlue.png"));
             } catch (IOException e) {
-                // 이미지가 없어도 기본 사각형/원으로 대신 그림
                 e.printStackTrace();
             }
         }
         
         public void startNewGame() {
-            loadStage(0); // 튜토리얼 로드
-            startGameThread(); // 게임 루프 시작
-            state = GameState.TUTORIAL; // 초기 상태 설정
+            loadStage(0);
+            startGameThread();
             
             // 게임 시작 시 BGM을 스테이지 음악으로 교체
             GameCore.getSoundManager().playBGM(SoundManager.BGM_STAGE);
@@ -258,6 +259,8 @@ public class GameCore {
                     break;
                 case QUESTION:
                 case ENDING:
+                	updateEndingTyping(dt); // 엔딩 타이핑 애니메이션
+                	break;
                 case PAUSE:
                 case MENU:
                 default:
@@ -310,6 +313,7 @@ public class GameCore {
          * - GEM_YELLOW / GEM_BLUE: 능력 부여
          */
         private void handleTileInteractions() {
+        	// ※ 여긴 그대로 둠(가시/아이템 판정은 기존 크기 유지)
             int leftTile   = Math.max(0, (int) (player.getLeft()   / TILE_SIZE));
             int rightTile  = Math.min(currentMap.width  - 1, (int) (player.getRight()  / TILE_SIZE));
             int topTile    = Math.max(0, (int) (player.getTop()    / TILE_SIZE));
@@ -323,24 +327,47 @@ public class GameCore {
                         case SPIKE:
                             handlePlayerDeath();
                             return;
+                            
                         case STAR:
-                            currentMap.tiles[ty][tx] = MapLoader.TileType.EMPTY;
+                        	currentMap.tiles[ty][tx] = MapLoader.TileType.EMPTY;
                             collectedStars++;
                             if (stageInfos[currentStageIndex] != null) {
                                 stageInfos[currentStageIndex].incrementCollectedStars();
                             }
+                            
+                            // 별 획득 효과음 재생 추가
+                            GameCore.getSoundManager().playSFX(SoundManager.SFX_STAR_COLLECT);
+                            // 별을 다 먹었을 때 처리
                             if (collectedStars >= totalStarsInStage && !waitingForQuestionAnswer) {
+
+                                /* 튜토리얼(0)은 문제 없이 바로 다음 스테이지
+                                   [UI] 튜토리얼 클리어 화면 때문에 일부 수정*/
+                                if (currentStageIndex == 0) {
+                                	lastAnswerCorrect = true; // [UI] 튜토리얼은 성공으로 간주
+                                    StageInfo info = stageInfos[currentStageIndex];
+                                    if (info != null) {
+                                    	info.setQuestionAnswered(true); // [UI] 화면 표시를 위해 정답 처리
+                                    	info.finishStageNow();
+                                    	}
+                                    state = GameState.ENDING; // ENDING 상태로 전환
+                                    return; // 처리 종료
+                                }
+
+                                // Stage 1~3은 문제로 진입
                                 enterQuestionState();
                             }
                             break;
+                            
                         case GEM_YELLOW:
                             currentMap.tiles[ty][tx] = MapLoader.TileType.EMPTY;
                             player.setFormYellow();
                             break;
+                            
                         case GEM_BLUE:
                             currentMap.tiles[ty][tx] = MapLoader.TileType.EMPTY;
                             player.setFormBlue();
                             break;
+                            
                         case DOOR:
                         case WALL:
                         case EMPTY:
@@ -369,6 +396,7 @@ public class GameCore {
                 waitingForQuestionAnswer = false;
                 questionAnsweredThisStage = false;
                 lastAnswerCorrect = false;
+                currentQuiz = null; // (추가) 재시작하면 퀴즈도 초기화
 
                 player = new Player(map.playerStartX, map.playerStartY,
                         TILE_SIZE * 0.7, TILE_SIZE * 0.9);
@@ -378,6 +406,9 @@ public class GameCore {
                             new StageInfo(currentStageIndex, getStageName(currentStageIndex), totalStarsInStage);
                 }
                 stageInfos[currentStageIndex].startStage();
+                
+                // 여기서 상태도 다시 맞춰줌(재시작 깔끔하게)
+                state = (currentStageIndex == 0) ? GameState.TUTORIAL : GameState.STAGE_PLAY;
             }
         }
 
@@ -394,8 +425,8 @@ public class GameCore {
 
         /**
          * 스테이지 로드
-         * - stageIndex == 0 : 실제 플레이
-         * - stageIndex 1~3 : 스토리(자동 엔딩) 전용
+         * - 튜토리얼(0)은 TUTORIAL 상태
+         * - 1~3은 STAGE_PLAY 상태(이제 자동 엔딩 제거)
          */
         private void loadStage(int stageIndex) {
             if (stageIndex < 0 || stageIndex >= MAX_STAGE_COUNT) return;
@@ -406,12 +437,14 @@ public class GameCore {
                 System.err.println("Map load failed for stage " + stageIndex);
                 return;
             }
+
             currentMap = map;
             totalStarsInStage = map.totalStars;
             collectedStars = 0;
             waitingForQuestionAnswer = false;
             questionAnsweredThisStage = false;
             lastAnswerCorrect = false;
+            currentQuiz = null;
 
             if (stageInfos[stageIndex] == null) {
                 stageInfos[stageIndex] =
@@ -424,36 +457,25 @@ public class GameCore {
             player = new Player(map.playerStartX, map.playerStartY,
                     TILE_SIZE * 0.7, TILE_SIZE * 0.9);
 
-            // 튜토리얼 이후 Stage1~3은 스토리 전용 자동 클리어
-            if (stageIndex == 1 || stageIndex == 2 || stageIndex == 3) {
-                waitingForQuestionAnswer = false;
-                questionAnsweredThisStage = true;
-                lastAnswerCorrect = true;   // 스토리상 정상 진행으로 처리
-
-                StageInfo info = stageInfos[stageIndex];
-                if (info != null) {
-                    info.setQuestionAnswered(true);
-                    info.finishStageNow();
-                }
-
-                state = GameState.ENDING;   // 바로 엔딩 화면
-                return;
-            }
-
-            // 튜토리얼만 실제 플레이 상태로 진입
-            state = GameState.TUTORIAL;
+            // 상태 설정
+            state = (stageIndex == 0) ? GameState.TUTORIAL : GameState.STAGE_PLAY;
         }
 
-        /** 별을 모두 먹었을 때 호출 */
+        /** 별을 모두 먹었을 때 호출 (Stage1~3) */
         private void enterQuestionState() {
             waitingForQuestionAnswer = true;
             questionAnsweredThisStage = false;
+
+            // (추가) 스테이지에 맞는 문제 하나 가져오기 (2개 중 랜덤, 연속중복 방지)
+            currentQuiz = QuestionBox.pick(currentStageIndex);
+
             state = GameState.QUESTION;
         }
 
         /**
-         * UI 담당에서 문제를 풀고 나서 호출할 수 있는 메서드
-         * - 정답/오답에 따라 엔딩 분기
+         * 문제 풀이 결과 처리
+         * - 정답이면: 엔딩(좋은) → Enter로 다음 스테이지
+         * - 오답이면: 엔딩(나쁜) → Enter로 같은 스테이지 재시작
          */
         public void onQuestionAnswered(boolean correct) {
             if (!waitingForQuestionAnswer || questionAnsweredThisStage) return;
@@ -466,17 +488,26 @@ public class GameCore {
             if (info != null) {
                 info.setQuestionAnswered(correct);
                 info.finishStageNow();
+                
+                // [UI] 엔딩화면 타이핑 인덱스 초기화
+                info.resetTypingState();
             }
 
             state = GameState.ENDING;
         }
 
-        /** 엔딩에서 Enter 누르면 다음 스테이지 or 다시 튜토리얼 */
+        /** 엔딩에서 Enter 누르면: 맞으면 다음 / 틀리면 재시작 */
         private void goToNextStageOrFinishGame() {
-            if (currentStageIndex + 1 < MAX_STAGE_COUNT) {
-                loadStage(currentStageIndex + 1);
+            if (lastAnswerCorrect) {
+                if (currentStageIndex + 1 < MAX_STAGE_COUNT) {
+                    loadStage(currentStageIndex + 1);
+                } else {
+                    // 마지막까지 클리어하면 다시 튜토리얼로 순환(원하면 여기서 메뉴로 보내도 됨)
+                    loadStage(0);
+                }
             } else {
-                loadStage(0);
+                // 오답이면 같은 스테이지 다시(P 위치)
+                resetCurrentStage();
             }
         }
 
@@ -502,9 +533,12 @@ public class GameCore {
                     renderQuestionOverlay(backG);
                     break;
                 case ENDING:
-                    renderStagePlay(backG);
-                    renderHUD(backG);
-                    renderEndingOverlay(backG);
+                	// Stage 3인지 확인하여 최종 엔딩 분기 처리
+                    if (currentStageIndex == 3) { 
+                        renderFinalEnding(backG); // 최종 엔딩
+                    } else {
+                        renderEndingOverlay(backG); // 스테이지 클리어시
+                    }
                     break;
                 case PAUSE:
                 	renderStagePlay(backG);
@@ -626,7 +660,7 @@ public class GameCore {
             g.drawImage(coinImg, px, drawY, TILE_SIZE, TILE_SIZE, null);
         }
 
-        /** HUD: 스테이지 이름, 별/사망 횟수 표시 */
+        /** HUD: 스테이지 이름, 별/사망 횟수 표시 + 타이머*/
         private void renderHUD(Graphics2D g) {
             g.setColor(Color.BLACK);
             g.setFont(g.getFont().deriveFont(Font.BOLD, 16f));
@@ -642,6 +676,29 @@ public class GameCore {
             g.drawString(stageName, 10, 20);
             g.drawString(starInfo, 10, 40);
             g.drawString(deathInfo, 10, 60);
+            
+            // [추가] 실시간 타이머 표시 로직 추가
+            if (stageInfos[currentStageIndex] != null) {
+                
+                StageInfo currentInfo = stageInfos[currentStageIndex];
+                
+                long currentElapsedTime = currentInfo.getElapsedPlayTimeMillis();
+                
+                if (currentElapsedTime < 0) {
+                    currentElapsedTime = 0;
+                }
+                
+                g.setColor(Color.BLACK); 
+                g.setFont(g.getFont().deriveFont(Font.BOLD, 24f));
+
+                String timeString = formatTime(currentElapsedTime);
+                
+                // 오른쪽 상단에 위치
+                int xPos = WIDTH - g.getFontMetrics().stringWidth(timeString) - 20; 
+                int yPos = 40; 
+                
+                g.drawString(timeString, xPos, yPos);
+            }
         }
 
         /** 튜토리얼 도움말 오버레이 (H로 토글) */
@@ -668,32 +725,47 @@ public class GameCore {
             g.drawString("H 키 : 이 도움말 창 숨기기 / 다시 보기", x, y);
         }
 
-        /** 문제 단계 오버레이 (지금은 테스트 전용) */
+        /** (수정) 문제 단계 오버레이: O/X 퀴즈 */
         private void renderQuestionOverlay(Graphics2D g) {
-            g.setColor(new Color(0, 0, 0, 170));
+            g.setColor(new Color(0, 0, 0, 180));
             g.fillRect(60, 60, WIDTH - 120, HEIGHT - 120);
 
+            int x = 90;
+            int y = 110;
+
             g.setColor(Color.WHITE);
-            g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
-            int x = 80;
-            int y = 100;
-            int dy = 26;
+            g.setFont(new Font("SansSerif", Font.BOLD, 22));
 
-            g.drawString("문제 단계", x, y);
-            y += dy;
-            g.setFont(g.getFont().deriveFont(Font.PLAIN, 14f));
-            g.drawString("실제 프로젝트에서는 UI 담당이 이 화면을 구현합니다.", x, y); y += dy;
-            g.drawString("여기서는 테스트를 위해 키보드로 정답/오답을 입력합니다.", x, y); y += dy;
-            g.drawString("1 키 : 정답으로 처리", x, y); y += dy;
-            g.drawString("2 키 : 오답으로 처리", x, y); y += dy;
+            // (추가) 타이틀은 스테이지 이름 그대로 사용
+            String title = getStageName(currentStageIndex);
+            g.drawString("퀴즈 - " + title, x, y);
+
+            y += 45;
+            g.setFont(new Font("SansSerif", Font.PLAIN, 16));
+
+            String q = (currentQuiz != null) ? currentQuiz.text : "문제 로딩 중...";
+            g.drawString(q, x, y);
+
+            y += 40;
+            g.setFont(new Font("SansSerif", Font.BOLD, 18));
+            g.setColor(new Color(255, 255, 120));
+            g.drawString("1번: O    2번: X", x, y);
+
+            y += 28;
+            g.setFont(new Font("SansSerif", Font.PLAIN, 14));
+            g.setColor(Color.LIGHT_GRAY);
+            g.drawString("정답이면 다음 스테이지 / 오답이면 이 스테이지부터 다시 시작", x, y);
         }
-
+        
         /** 엔딩 화면: StageStory의 텍스트를 사용 */
         private void renderEndingOverlay(Graphics2D g) {
-            // StageStory 클래스의 데이터 사용
+            
+            StageInfo info = stageInfos[currentStageIndex]; 
+            
             boolean good = lastAnswerCorrect; 
             String title = StageStory.getEndingTitle(currentStageIndex, good);
-            String[] lines = StageStory.getEndingLines(currentStageIndex, good);
+            // ⭐️ StageStory에서 모든 라인을 가져옵니다.
+            String[] allLines = StageStory.getEndingLines(currentStageIndex, good);
             
             // 1. 반투명 박스 배경
             g.setColor(new Color(0, 0, 0, 200));
@@ -714,15 +786,23 @@ public class GameCore {
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 16));
             
-            for (String line : lines) {
-                g.drawString(line, x, yCursor);
+            for (int i = 0; i < allLines.length; i++) {
+                String line = allLines[i];
+                
+                if (i < info.getCurrentLineIndex()) {
+                    g.drawString(line, x, yCursor);
+                } else if (i == info.getCurrentLineIndex()) {
+                    int end = Math.min(info.getCurrentCharIndex(), line.length());
+                    String partialLine = line.substring(0, end);
+                    g.drawString(partialLine, x, yCursor);
+                }
+                
                 yCursor += lineHeight;
             }
 
             // 4. 복구 성과 (우상단으로 이동 및 고정 좌표 사용)
-            StageInfo info = stageInfos[currentStageIndex];
             if (info != null) {
-                // ⭐️ 성과 섹션 시작 고정 좌표
+                // ⭐️ 성과 섹션 시작 고정 좌표 (타이핑 완료 여부와 관계 없이 항상 표시)
                 int statsX = WIDTH - 300;
                 int statsY = 100;
                 
@@ -773,6 +853,63 @@ public class GameCore {
             String text = "PAUSED";
             int strW = g.getFontMetrics().stringWidth(text);
             g.drawString(text, (WIDTH - strW) / 2, HEIGHT / 2);
+        }
+        
+        /** 최종 엔딩 화면: Stage3 클리어 후 호출 */
+        private void renderFinalEnding(Graphics2D g) {
+            
+            boolean goodEnding = lastAnswerCorrect;
+
+            StageInfo info = stageInfos[currentStageIndex];
+            String[] allLines = StageStory.getEndingLines(currentStageIndex, goodEnding);
+            
+            // 배경 설정
+            g.setColor(Color.BLACK);
+            g.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // 최종 엔딩 타이틀 (Y=70)
+            g.setFont(new Font("SansSerif", Font.BOLD, 60));
+            g.setColor(goodEnding ? new Color(100, 200, 255) : new Color(255, 100, 100));
+            
+            String title = StageStory.getEndingTitle(currentStageIndex, goodEnding);
+            int titleX = (WIDTH - g.getFontMetrics().stringWidth(title)) / 2;
+            g.drawString(title, titleX, 70);
+            
+            // 스토리 텍스트
+            int x = 100;
+            int yCursor = 200; 
+            int lineHeight = 35;
+            
+            g.setColor(Color.WHITE);
+            g.setFont(new Font("SansSerif", Font.PLAIN, 24));
+            
+            // [추가] 루프를 돌면서 타이핑 상태에 따라 텍스트를 출력합니다.
+            for (int i = 0; i < allLines.length; i++) {
+                String line = allLines[i];
+                
+                if (i < info.getCurrentLineIndex()) {
+                    // 이미 타이핑이 완료된 줄: 전체를 그립니다.
+                    g.drawString(line, x, yCursor);
+                } else if (i == info.getCurrentLineIndex()) {
+                    // 현재 타이핑 중인 줄: 부분만 그립니다.
+                    int end = Math.min(info.getCurrentCharIndex(), line.length());
+                    String partialLine = line.substring(0, end);
+                    g.drawString(partialLine, x, yCursor);
+                    
+                    // 아직 시작하지 않은 줄 (i > currentLineIndex)은 그리지 않습니다.
+                }
+                
+                yCursor += lineHeight;
+            }
+            
+            // 4. 게임 종료 안내 (하단 고정)
+            int finalYPosition = HEIGHT - 80;
+            
+            g.setFont(new Font("SansSerif", Font.BOLD, 22));
+            g.setColor(new Color(100, 255, 100)); 
+            String finalMsg = "게임을 플레이해 주셔서 감사합니다. (Press Enter to TUTORIAL)";
+            int msgX = (WIDTH - g.getFontMetrics().stringWidth(finalMsg)) / 2;
+            g.drawString(finalMsg, msgX, finalYPosition);
         }
 
         private void renderSimpleMenu(Graphics2D g) {
@@ -830,6 +967,11 @@ public class GameCore {
                 pausePanel.setVisible(true); 
                 pausePanel.requestFocusInWindow(); // 포커스를 줘야 버튼 조작 가능
                 revalidate(); 
+                
+                // 타이머 정지 로직
+                if (stageInfos[currentStageIndex] != null) {
+                    stageInfos[currentStageIndex].pauseTimer();
+                }
             }
         }
 
@@ -840,6 +982,11 @@ public class GameCore {
                 pausePanel.setVisible(false); 
                 requestFocusInWindow(); // GamePanel에 포커스 반환
                 revalidate();
+                
+                // 타이머 재개 로직
+                if (stageInfos[currentStageIndex] != null) {
+                    stageInfos[currentStageIndex].resumeTimer();
+                }
             }
         }
         
@@ -851,6 +998,63 @@ public class GameCore {
             // PausePanel이 떠 있는 상태라면 숨김 처리 (안전 장치)
             if (this.pausePanel != null) {
                 this.pausePanel.setVisible(false);
+            }
+        }
+        
+        public void stopGameThread() {
+            running = false; // 게임 루프를 멈추는 플래그를 비활성화
+            gameThread = null;
+        }
+        
+        // 타이머 표시 방식
+        private String formatTime(long millis) {
+            double seconds = (double) millis / 1000.0;
+            return String.format("%.2f초", seconds);
+        }
+        
+        // 타이핑 업데이트 메서드
+        private void updateEndingTyping(double dt) {
+            StageInfo info = stageInfos[currentStageIndex];
+            if (info == null) return;
+
+            // ⭐️ [Getter/Setter 사용] 타이머 업데이트
+            double newTimer = info.getTypingTimer() + dt;
+            info.setTypingTimer(newTimer);
+            
+            // 현재 줄 인덱스 및 속도 가져오기
+            int currentLine = info.getCurrentLineIndex();
+            double textSpeed = info.getTextDisplaySpeed();
+            
+            // StageStory에서 모든 줄 가져오기
+            String[] allLines = StageStory.getEndingLines(currentStageIndex, lastAnswerCorrect);
+            
+            // 현재 줄 인덱스가 유효 범위를 벗어나면 업데이트 중지 (모든 타이핑 완료)
+            if (currentLine >= allLines.length) {
+                return; 
+            }
+            
+            // 현재 줄의 전체 글자 수
+            int totalCharsInLine = allLines[currentLine].length();
+            
+            // 타이머를 글자 수로 변환하여 목표 글자 수 계산
+            int targetCharCount = (int) (info.getTypingTimer() / textSpeed); 
+            
+            if (targetCharCount >= totalCharsInLine) {
+                // 1. 현재 줄 타이핑 완료
+                info.setCurrentCharIndex(totalCharsInLine);
+
+                // 2. 다음 줄로 자동 이동 (0.5초 대기 후 다음 줄로 넘어간다고 가정합니다)
+                if (currentLine < allLines.length - 1) {
+                    if (info.getTypingTimer() >= totalCharsInLine * textSpeed + 0.5) { 
+                         info.setCurrentLineIndex(currentLine + 1);
+                         info.setTypingTimer(0.0);
+                         info.setCurrentCharIndex(0);
+                    }
+                }
+                
+            } else {
+                // 3. 타이핑 진행 중
+                info.setCurrentCharIndex(targetCharCount);
             }
         }
 
@@ -869,10 +1073,10 @@ public class GameCore {
             int code = e.getKeyCode();
 
             if (code == KeyEvent.VK_ESCAPE) {
-            	if (state == GameState.PAUSE) {
-                    resumeGame(); // 새로 만든 메서드 호출
+                if (state == GameState.PAUSE) {
+                    resumeGame();
                 } else if (state == GameState.TUTORIAL || state == GameState.STAGE_PLAY) {
-                    pauseGame(); // 새로 만든 메서드 호출
+                    pauseGame();
                 }
                 return;
             }
@@ -891,11 +1095,15 @@ public class GameCore {
             }
 
             if (state == GameState.QUESTION) {
-                // 테스트용: UI 담당은 여기 대신 onQuestionAnswered(...)를 직접 호출하면 됨
+                // (요구사항) 1번 = O, 2번 = X
                 if (code == KeyEvent.VK_1) {
-                    onQuestionAnswered(true);
+                    boolean userPickO = true;
+                    boolean correct = (currentQuiz != null) && (userPickO == currentQuiz.answerO);
+                    onQuestionAnswered(correct);
                 } else if (code == KeyEvent.VK_2) {
-                    onQuestionAnswered(false);
+                    boolean userPickO = false;
+                    boolean correct = (currentQuiz != null) && (userPickO == currentQuiz.answerO);
+                    onQuestionAnswered(correct);
                 }
                 return;
             }
@@ -971,13 +1179,17 @@ public class GameCore {
 
         // 대시 상태
         private boolean dashActive = false;
-        private double  dashTimeRemaining = 0.0;
+        private double dashTimeRemaining = 0.0;
         private static final double DASH_DURATION = 0.25;
 
         // 물리 파라미터
-        private static final double BOUNCE_SPEED    = 250.0;
+        private static final double BOUNCE_SPEED    = 280.0;
         private static final double DASH_SPEED      = 550.0;
-        private static final double BLUE_JUMP_SPEED = 550.0;
+        private static final double BLUE_JUMP_SPEED = 450.0;
+
+        // (추가) 벽 충돌만 줄이기 위한 패딩
+        private static final double COL_PAD_X = 4.0;
+        private static final double COL_PAD_Y = 3.0;
 
         public Player(double x, double y, double width, double height) {
             this.x = x;
@@ -988,7 +1200,7 @@ public class GameCore {
 
         public void applyHorizontalVelocity(double vx) {
             this.velX = vx;
-            if (vx > 0)      facingRight = true;
+            if (vx > 0) facingRight = true;
             else if (vx < 0) facingRight = false;
         }
 
@@ -996,11 +1208,7 @@ public class GameCore {
             velY += gravity * dt;
         }
 
-        /**
-         * Space 눌렀을 때 능력 사용
-         * - YELLOW: 진행 방향으로 대시 + 약간 점프
-         * - BLUE  : 위로 강한 점프
-         */
+        /** Space 눌렀을 때 능력 사용 */
         public void useAbility() {
             if (!abilityReady) return;
 
@@ -1009,11 +1217,11 @@ public class GameCore {
                     dashActive = true;
                     dashTimeRemaining = DASH_DURATION;
                     velX = (facingRight ? DASH_SPEED : -DASH_SPEED);
-                    velY = -BLUE_JUMP_SPEED * 0.6;
+                    velY = -BLUE_JUMP_SPEED * 0.45;   // 대시 점프 높이
                     break;
 
                 case BLUE:
-                    velY = -BLUE_JUMP_SPEED;
+                    velY = -BLUE_JUMP_SPEED * 0.80;   // 슈퍼점프 높이
                     break;
 
                 case BASIC:
@@ -1021,7 +1229,7 @@ public class GameCore {
                     return;
             }
 
-            // 능력 사용 후 다시 BASIC으로 복귀
+            // 능력 사용 후 BASIC 복귀
             form = Form.BASIC;
             abilityReady = false;
         }
@@ -1036,11 +1244,7 @@ public class GameCore {
             this.abilityReady = true;
         }
 
-        /**
-         * 타일 기반 충돌 처리
-         * - 수평/수직을 나누어 처리
-         * - 바닥 충돌 시 자동 튕김
-         */
+        /** 타일 기반 충돌 처리 */
         public void moveAndCollide(MapLoader.MapData map, double dt, int tileSize) {
             double newX = x + velX * dt;
             double newY = y + velY * dt;
@@ -1052,11 +1256,15 @@ public class GameCore {
             onGround = false;
 
             if (resultY != newY && velY > 0) {
-                // 바닥에 닿은 경우: 튕겨 오름
+                // 바닥에 닿으면 튕김
                 velY = -BOUNCE_SPEED;
                 onGround = true;
+                // [추가] 점프 소리
+                if (GameCore.getSoundManager() != null) {
+                    GameCore.getSoundManager().playSFX(SoundManager.SFX_JUMP);
+                }
             } else if (resultY != newY && velY < 0) {
-                // 천장에 부딪힌 경우: 위쪽 속도 제거
+                // 천장에 닿으면 위속도 제거
                 velY = 0;
             }
 
@@ -1071,21 +1279,20 @@ public class GameCore {
             }
         }
 
-        /**
-         * 한 축 방향으로만 이동/충돌 처리
-         */
+        /** 한 축 이동/충돌 처리 */
         private double moveAndCollideAxis(MapLoader.MapData map, double targetX, double targetY,
                                           int tileSize, boolean horizontal) {
             double resultX = x;
             double resultY = y;
 
             if (horizontal) resultX = targetX;
-            else           resultY = targetY;
+            else resultY = targetY;
 
-            double left   = resultX;
-            double right  = resultX + width;
-            double top    = resultY;
-            double bottom = resultY + height;
+            // (수정) WALL 충돌은 작은 히트박스로 계산
+            double left   = resultX + COL_PAD_X;
+            double right  = resultX + width - COL_PAD_X;
+            double top    = resultY + COL_PAD_Y;
+            double bottom = resultY + height - COL_PAD_Y;
 
             int leftTile   = (int) Math.floor(left   / tileSize);
             int rightTile  = (int) Math.floor(right  / tileSize);
@@ -1107,27 +1314,31 @@ public class GameCore {
                     int tileTop    = ty * tileSize;
                     int tileBottom = tileTop + tileSize;
 
-                    if (right  <= tileLeft || left >= tileRight ||
-                        bottom <= tileTop  || top  >= tileBottom) {
+                    if (right <= tileLeft || left >= tileRight ||
+                            bottom <= tileTop || top >= tileBottom) {
                         continue;
                     }
 
                     if (horizontal) {
                         if (velX > 0) {
-                            resultX = tileLeft - width - 0.01;
+                            // colRight가 tileLeft에 닿게
+                            resultX = tileLeft - 0.01 - (width - COL_PAD_X);
                         } else if (velX < 0) {
-                            resultX = tileRight + 0.01;
+                            // colLeft가 tileRight에 닿게
+                            resultX = tileRight + 0.01 - COL_PAD_X;
                         }
-                        left  = resultX;
-                        right = resultX + width;
+                        left  = resultX + COL_PAD_X;
+                        right = resultX + width - COL_PAD_X;
                     } else {
                         if (velY > 0) {
-                            resultY = tileTop - height - 0.01;
+                            // colBottom이 tileTop에 닿게
+                            resultY = tileTop - 0.01 - (height - COL_PAD_Y);
                         } else if (velY < 0) {
-                            resultY = tileBottom + 0.01;
+                            // colTop이 tileBottom에 닿게
+                            resultY = tileBottom + 0.01 - COL_PAD_Y;
                         }
-                        top    = resultY;
-                        bottom = resultY + height;
+                        top    = resultY + COL_PAD_Y;
+                        bottom = resultY + height - COL_PAD_Y;
                     }
                 }
             }
@@ -1136,7 +1347,7 @@ public class GameCore {
         }
 
         // ---- getter ----
-
+        // (설명) 밖(GamePanel)에서 플레이어 위치/크기/상태를 읽을 수 있게 해주는 함수들
         public double getX()      { return x; }
         public double getY()      { return y; }
         public double getWidth()  { return width; }
@@ -1147,9 +1358,9 @@ public class GameCore {
         public double getRight()  { return x + width; }
         public double getBottom() { return y + height; }
 
-        public double  getVelY()       { return velY; }
+        public double getVelY()        { return velY; }
         public boolean isOnGround()    { return onGround; }
-        public Form    getForm()       { return form; }
+        public Form getForm()          { return form; }
         public boolean isFacingRight() { return facingRight; }
 
         public boolean isDashing() {

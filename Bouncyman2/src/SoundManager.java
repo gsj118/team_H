@@ -5,21 +5,21 @@ import java.io.IOException;
 /**
  * SoundManager: 오디오 파일(WAV/AUFF) 재생을 담당하는 클래스
  * - 현재는 개발 환경(File 시스템) 기준으로 BGM이 재생됩니다.
- * - BGM 볼륨 조절 기능(setBGMVolume)이 추가되었습니다.
  */
 public class SoundManager {
 
     // BGM용 Clip 객체 (반복 재생용)
     private Clip bgmClip;
     
-    // BGM 볼륨 값을 저장 | 기본값 -15.0f는 15dB 소리 감소
+    // BGM 볼륨 값
     private float currentBGMVolume = -15.0f; 
+    private float currentSFXVolume = -15.0f;
 
     // 사운드 파일 경로
     public static final String BGM_MAIN_MENU = "audio/menu_bgm.wav";
     public static final String BGM_STAGE = "audio/stage_bgm.wav";
     public static final String SFX_JUMP = "audio/jump.wav";
-    public static final String SFX_COLLISION = "audio/collision.wav";
+    public static final String SFX_STAR_COLLECT = "audio/star_collect.wav";
 
 
     /**
@@ -104,13 +104,24 @@ public class SoundManager {
     }
 
     /**
-     * 효과음을 1회 재생합니다.
+     * 효과음을 재생합니다.
      */
     public void playSFX(String sfxPath) {
-        // SFX는 동시에 여러 개 재생될 수 있으므로, 매번 새로운 Clip을 사용합니다.
         Clip clip = loadClip(sfxPath);
         if (clip != null) {
-            // 재생이 끝나면 자동으로 닫히도록 Listener를 추가 (자원 해제)
+            try {
+                // FloatControl을 사용하여 볼륨 조절
+                if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+                    FloatControl gainControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+                    
+                    // 저장된 SFX 볼륨 값 적용
+                    gainControl.setValue(currentSFXVolume);
+                }
+
+            } catch (IllegalArgumentException e) {
+            	System.err.println("SFX 오디오 클립이 볼륨 조절을 지원하지 않습니다: " + sfxPath);
+            }
+
             clip.addLineListener(event -> {
                 if (event.getType() == LineEvent.Type.STOP) {
                     clip.close();
@@ -119,5 +130,13 @@ public class SoundManager {
             clip.setFramePosition(0);
             clip.start();
         }
+    }
+    
+    /**
+     * ⭐️ [추가된 기능] 재생될 효과음의 기본 볼륨을 설정합니다.
+     * @param volume dB 값 (0.0f가 원본, 음수 값은 소리 감소)
+     */
+    public void setSFXVolume(float volume) {
+        this.currentSFXVolume = volume;
     }
 }

@@ -69,13 +69,13 @@ public class MenuPanel extends JPanel implements ActionListener {
         gbc.insets = new Insets(15, 0, 15, 0); 
         centerPanel.add(exitButton, gbc);
         
-        // ⭐️ 중앙 콘텐츠를 MenuPanel의 CENTER에 추가
+        // 중앙 콘텐츠를 MenuPanel의 CENTER에 추가
         add(centerPanel, BorderLayout.CENTER);
 
 
-        // --- 제작자 정보(우하단) ---
+        // --- 제작자 정보(우하단쪽) ---
         
-        // ⭐️ 제작자 정보를 담을 JLabel 생성
+        // 제작자 정보를 담을 JLabel 생성
         JLabel creatorLabel = new JLabel("Team: H  |  팀장: 구서준  |  팀원: 송효인 정다운", SwingConstants.RIGHT);
         creatorLabel.setForeground(new Color(200, 200, 200));
         creatorLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));

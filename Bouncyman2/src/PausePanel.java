@@ -97,6 +97,8 @@ public class PausePanel extends JPanel implements ActionListener {
         } else if ("GO_TO_MENU".equals(command)) {
         	// 메인메뉴 BGM으로 교체
         	GameCore.getSoundManager().playBGM(SoundManager.BGM_MAIN_MENU);
+        	// 게임 루프 정지(메인화면 갔을 때)
+        	gamePanel.stopGameThread();
             // CardLayout을 MENU 카드로 전환
         	gamePanel.resetStateToTutorial();
             cl.show(mainContainer, GameCore.CARD_MENU);
