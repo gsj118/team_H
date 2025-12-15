@@ -21,13 +21,12 @@ public class MenuPanel extends JPanel implements ActionListener {
 
         // 패널 설정
         setBackground(new Color(20, 20, 40)); 
-        // ⭐️ BorderLayout을 사용하여 중앙에 버튼을, SouthEast에 제작자 정보를 배치합니다.
         setLayout(new BorderLayout()); 
         
         // 중앙 패널
         JPanel centerPanel = new JPanel();
-        centerPanel.setLayout(new GridBagLayout()); // 내부 정렬은 GridBagLayout 유지
-        centerPanel.setOpaque(false); // 배경 투명하게 (MenuPanel의 배경색 사용)
+        centerPanel.setLayout(new GridBagLayout());
+        centerPanel.setOpaque(false);
 
         // 제목 레이블
         JLabel titleLabel = new JLabel("Bounce Escape");
@@ -74,7 +73,6 @@ public class MenuPanel extends JPanel implements ActionListener {
 
 
         // --- 제작자 정보(우하단쪽) ---
-        
         // 제작자 정보를 담을 JLabel 생성
         JLabel creatorLabel = new JLabel("Team: H  |  팀장: 구서준  |  팀원: 송효인 정다운", SwingConstants.RIGHT);
         creatorLabel.setForeground(new Color(200, 200, 200));
@@ -83,15 +81,11 @@ public class MenuPanel extends JPanel implements ActionListener {
         // 패딩을 위한 JPanel 생성
         JPanel creatorPanel = new JPanel(new BorderLayout());
         creatorPanel.setOpaque(false);
-        // 약간 여백 (Insets(Top, Left, Bottom, Right))
         creatorPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 10)); 
-        
-        creatorPanel.add(creatorLabel, BorderLayout.EAST); // 레이블을 패널의 오른쪽에 배치
+        creatorPanel.add(creatorLabel, BorderLayout.EAST);
 
-        // creatorPanel을 MenuPanel의 SOUTH에 추가
         add(creatorPanel, BorderLayout.SOUTH);
 
-        // GameCore의 GamePanel과 동일한 크기를 가지도록 설정
         setPreferredSize(new Dimension(GameCore.GamePanel.WIDTH, GameCore.GamePanel.HEIGHT));
     }
 
@@ -110,7 +104,6 @@ public class MenuPanel extends JPanel implements ActionListener {
             // 게임 루프 시작, 튜토리얼 로드
             gamePanel.startNewGame(); 
         } else if ("EXIT".equals(command)) {
-            // 프로그램 종료
             System.exit(0);
         }
     }

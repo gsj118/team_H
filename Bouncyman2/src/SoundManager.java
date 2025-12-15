@@ -20,6 +20,7 @@ public class SoundManager {
     public static final String BGM_STAGE = "audio/stage_bgm.wav";
     public static final String SFX_JUMP = "audio/jump.wav";
     public static final String SFX_STAR_COLLECT = "audio/star_collect.wav";
+    public static final String SFX_TYPING = "audio/typing.wav";
 
 
     /**
@@ -56,7 +57,7 @@ public class SoundManager {
         
         bgmClip = loadClip(bgmPath);
         if (bgmClip != null) {
-            // ⭐️ [볼륨 적용] 클립 로드 후, 저장된 볼륨 값 적용
+            // 클립 로드 후, 저장된 볼륨 값 적용
             setBGMVolume(currentBGMVolume); 
             
             // 처음부터 재생 시작
@@ -98,7 +99,7 @@ public class SoundManager {
                 System.err.println("오디오 클립이 볼륨 조절을 지원하지 않습니다.");
             }
         } else {
-            // BGM이 로드되지 않은 경우, 볼륨 값만 저장해 둡니다.
+            // BGM이 로드되지 않은 경우, 볼륨 값만 저장
             currentBGMVolume = volume;
         }
     }
@@ -133,10 +134,12 @@ public class SoundManager {
     }
     
     /**
-     * ⭐️ [추가된 기능] 재생될 효과음의 기본 볼륨을 설정합니다.
+     * ⭐️ [추가] 재생될 효과음의 기본 볼륨 설정 부분
      * @param volume dB 값 (0.0f가 원본, 음수 값은 소리 감소)
      */
     public void setSFXVolume(float volume) {
         this.currentSFXVolume = volume;
     }
+    
+    
 }

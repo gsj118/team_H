@@ -24,11 +24,13 @@ public class StageInfo {
     private long startTimeMillis;
     private long clearTimeMillis;
     
-    // [추가] 타이핑 애니메이션 관련
+    // [추가] 스토리, 타이핑 애니메이션 관련
     private double typingTimer;
     private final double textDisplaySpeed = 0.03; 
     private int currentLineIndex;
     private int currentCharIndex;
+    private boolean storyEnd = false;
+    private String[] currentStoryLines;
 
     public StageInfo(int stageIndex, String stageName, int totalStars) {
         this.stageIndex = stageIndex;
@@ -59,6 +61,7 @@ public class StageInfo {
         this.deathCount = 0;
         this.startTimeMillis = 0L;
         this.clearTimeMillis = 0L;
+        this.storyEnd = false; // 묶어놓고 리셋으로 사용함 (게임 여러 번 진행시 오류 때문에)
     }
 
     public void finishStageNow() {
@@ -189,4 +192,35 @@ public class StageInfo {
         this.currentLineIndex = 0;
         this.currentCharIndex = 0;
     }
+    
+    public boolean isTypingFinished() {
+        // StageInfo 내부에 구현된 storyEnd 필드를 반환하도록 구현 (스토리 종료 플래그)
+        return this.storyEnd; 
+    }
+
+    public void finishTypingAndCheckEnd() {
+        // 텍스트를 즉시 모두 출력되게 만드는 로직 구현
+        if (this.currentStoryLines != null && this.currentStoryLines.length > 0) {
+            int lastLineIndex = this.currentStoryLines.length - 1;
+            this.currentLineIndex = lastLineIndex;
+            // currentCharIndex를 마지막 글자로 설정
+            this.currentCharIndex = this.currentStoryLines[lastLineIndex].length();
+            this.storyEnd = true;
+        } else {
+            this.storyEnd = true;
+        }
+    }
+    
+    private String fullText;
+    
+    public String getFullText() {
+        return fullText;
+    }
+
+    // 텍스트 전체를 새로 설정하는 메서드
+    public void setFullText(String newText) {
+        this.fullText = newText;
+        this.currentStoryLines = newText.split("\n");
+    }
 }
+

@@ -43,7 +43,7 @@ public class GameCore {
             // CardLayout을 사용할 메인 컨테이너
             JPanel mainContainer = new JPanel(new CardLayout());
             
-            GamePanel gamePanel = new GamePanel();
+            GamePanel gamePanel = new GamePanel(mainContainer);
             MenuPanel menuPanel = new MenuPanel(gamePanel, mainContainer);
             gamePanel.initPausePanel(mainContainer);
             
@@ -61,6 +61,7 @@ public class GameCore {
     /** 전체 게임 상태 */
     private enum GameState {
         MENU,
+        INTRO,
         TUTORIAL,
         STAGE_PLAY,
         QUESTION,
@@ -93,7 +94,7 @@ public class GameCore {
         private volatile boolean running = false;
 
         // 상태
-        private GameState state = GameState.TUTORIAL;
+        private GameState state = GameState.INTRO;
         private boolean questionAnsweredThisStage = false;
 
         // 입력 상태
@@ -112,7 +113,9 @@ public class GameCore {
         private int currentStageIndex = 0;
         private static final int MAX_STAGE_COUNT = 4; // 0~3
         private StageInfo[] stageInfos = new StageInfo[MAX_STAGE_COUNT];
-
+        private boolean[] stageSuccessStatus = new boolean[4]; // 스테이지 문제 정답 여부
+        private boolean finalResultGood = false;
+        
         private MapLoader.MapData currentMap;
         private Player player;
 
@@ -143,6 +146,11 @@ public class GameCore {
         private BufferedImage coinImg;
         private BufferedImage gemYellowImg;
         private BufferedImage gemBlueImg;
+        
+        // 배경 이미지
+        private BufferedImage introBGImg; // 인트로
+        private BufferedImage goodEndingBG; // 굿 엔딩
+        private BufferedImage badEndingBG;  // 배드 엔딩
 
         // 코인 애니메이션
         private double coinAnimTime = 0.0;
@@ -152,8 +160,20 @@ public class GameCore {
         
         // UI: 일시정지 전 상태 저장
         private GameState lastPlayState = GameState.TUTORIAL;
-
-        public GamePanel() {
+        
+        // 인트로 객체
+        private IntroManager introManager = new IntroManager();
+        
+        private double phase2TypingTimer = 0.0;
+        private int phase2CurrentCharIndex = 0;
+        private final double phase2TextDisplaySpeed = 0.1;
+        
+        private final JPanel mainContainer;
+        
+        private String finalEndingPhase2Text;
+        
+        public GamePanel(JPanel mainContainer) {
+        	this.mainContainer = mainContainer;
             setPreferredSize(new Dimension(WIDTH, HEIGHT));
             setFocusable(true);
             requestFocusInWindow();
@@ -161,7 +181,6 @@ public class GameCore {
 
             initBackBuffer();
             loadImages();
-            loadStage(0); // 튜토리얼부터 시작
             
             setLayout(null);
         }
@@ -186,19 +205,27 @@ public class GameCore {
                 coinImg        = ImageIO.read(new File("image/coinGold.png"));
                 gemYellowImg   = ImageIO.read(new File("image/gemYellow.png"));
                 gemBlueImg     = ImageIO.read(new File("image/gemBlue.png"));
+                
+                introBGImg     = ImageIO.read(new File("image/Intro.png"));
+                goodEndingBG   = ImageIO.read(new File("image/Ending_A.png"));
+                badEndingBG    = ImageIO.read(new File("image/Ending_B.png"));
+                
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
         
         public void startNewGame() {
-            loadStage(0);
-            startGameThread();
+        	state = GameState.INTRO;
+        	introManager = new IntroManager();
             
+        	startGameThread();
             // 게임 시작 시 BGM을 스테이지 음악으로 교체
             GameCore.getSoundManager().playBGM(SoundManager.BGM_STAGE);
             
             SwingUtilities.invokeLater(() -> requestFocusInWindow());
+            
+            state = GameState.INTRO;
         }
 
         public void startGameThread() {
@@ -253,11 +280,15 @@ public class GameCore {
         /** 상태별 업데이트 */
         private void update(double dt) {
             switch (state) {
+            	case INTRO:
+            		introManager.update(dt);
+            		break;
                 case TUTORIAL:
                 case STAGE_PLAY:
                     updateStagePlay(dt);
                     break;
                 case QUESTION:
+                	break;
                 case ENDING:
                 	updateEndingTyping(dt); // 엔딩 타이핑 애니메이션
                 	break;
@@ -456,6 +487,11 @@ public class GameCore {
 
             player = new Player(map.playerStartX, map.playerStartY,
                     TILE_SIZE * 0.7, TILE_SIZE * 0.9);
+            
+            if (stageIndex == 0) {
+                stageSuccessStatus[0] = true; 
+                // 튜토리얼은 퀴즈가 없으므로 정답 상태를 미리 설정
+            }
 
             // 상태 설정
             state = (stageIndex == 0) ? GameState.TUTORIAL : GameState.STAGE_PLAY;
@@ -474,15 +510,19 @@ public class GameCore {
 
         /**
          * 문제 풀이 결과 처리
-         * - 정답이면: 엔딩(좋은) → Enter로 다음 스테이지
-         * - 오답이면: 엔딩(나쁜) → Enter로 같은 스테이지 재시작
+         * 정답 오답 관계없이 스테이지는 진행
          */
         public void onQuestionAnswered(boolean correct) {
             if (!waitingForQuestionAnswer || questionAnsweredThisStage) return;
 
             questionAnsweredThisStage = true;
             waitingForQuestionAnswer = false;
-            lastAnswerCorrect = correct;
+            
+            // 정답 여부를 전역 배열에 기록
+            // currentStageIndex는 현재 퀴즈를 푼 스테이지 인덱스
+            stageSuccessStatus[currentStageIndex] = correct; 
+
+            lastAnswerCorrect = correct; // 수정 전 기준필드인데 오류나서 일단 유지함
 
             StageInfo info = stageInfos[currentStageIndex];
             if (info != null) {
@@ -492,23 +532,61 @@ public class GameCore {
                 // [UI] 엔딩화면 타이핑 인덱스 초기화
                 info.resetTypingState();
             }
+            
+            if (currentStageIndex == 3) {
+                int successCount = 0;
+                // 배열 전체를 순회하며 성공 횟수를 계산
+                for (boolean success : stageSuccessStatus) {
+                    if (success) {
+                        successCount++;
+                    }
+                }
+                // Stage 0, 1, 2, 3 모두 성공했을 때만 finalResultGood = true
+                this.finalResultGood = (successCount == stageSuccessStatus.length);
+                
+                if (this.finalResultGood) {
+                    // good 엔딩 2차
+                    info.setFullText(info.getFullText() + "\n\nPress ENTER to continue..."); 
+                    finalEndingPhase2Text = "당신은 동료들과 함께 우주선을 타고 이 행성을 떠납니다."
+                    		+ "\n동료들의 웃음소리에 당신의 입가에도 미소가 번집니다.";
+                } else {
+                    // bad 엔딩 2차
+                    info.setFullText(info.getFullText() + "\n\nPress ENTER to continue..."); 
+                    finalEndingPhase2Text = "당신은 거대한 컴퓨터 구조가 된 이 행성 위에 홀로 남아 "
+                    		+ "\n언젠가 또 올 탈출 시도를 위해 시스템을 지켜보기로 합니다."; // 2단계 텍스트 저장
+                }
+            }
 
+            // 정답 여부와 관계없이 무조건 ENDING 상태로 전환
             state = GameState.ENDING;
+            
         }
 
-        /** 엔딩에서 Enter 누르면: 맞으면 다음 / 틀리면 재시작 */
+        /** 엔딩에서 Enter 누르면 다음 */
         private void goToNextStageOrFinishGame() {
-            if (lastAnswerCorrect) {
-                if (currentStageIndex + 1 < MAX_STAGE_COUNT) {
-                    loadStage(currentStageIndex + 1);
-                } else {
-                    // 마지막까지 클리어하면 다시 튜토리얼로 순환(원하면 여기서 메뉴로 보내도 됨)
-                    loadStage(0);
-                }
-            } else {
-                // 오답이면 같은 스테이지 다시(P 위치)
-                resetCurrentStage();
+            
+            // Stage 0, 1, 2 클리어 > 다음 스테이지
+            if (currentStageIndex + 1 < MAX_STAGE_COUNT) {
+                loadStage(currentStageIndex + 1); 
+                return;
+            } 
+            
+            // Stage 3 클리어 > 최종 엔딩
+            StageInfo info = stageInfos[currentStageIndex]; 
+            
+            // 1차 Enter: 타이핑 강제 완료
+            if (!info.isTypingFinished()) {
+                info.finishTypingAndCheckEnd(); 
+                return;
             }
+            stopGameThread();
+            
+            // 메인 화면으로
+            CardLayout cl = (CardLayout) mainContainer.getLayout();
+            cl.show(mainContainer, GameCore.CARD_MENU); 
+            
+            GameCore.getSoundManager().playBGM(SoundManager.BGM_MAIN_MENU);
+            resetStateToTutorial();
         }
 
         /** 백버퍼에 렌더 */
@@ -519,6 +597,9 @@ public class GameCore {
             backG.fillRect(0, 0, WIDTH, HEIGHT);
 
             switch (state) {
+            	case INTRO:
+            		renderStoryOverlay(backG);
+            		break;
                 case TUTORIAL:
                 case STAGE_PLAY:
                     renderStagePlay(backG);
@@ -693,7 +774,6 @@ public class GameCore {
 
                 String timeString = formatTime(currentElapsedTime);
                 
-                // 오른쪽 상단에 위치
                 int xPos = WIDTH - g.getFontMetrics().stringWidth(timeString) - 20; 
                 int yPos = 40; 
                 
@@ -754,7 +834,75 @@ public class GameCore {
             y += 28;
             g.setFont(new Font("SansSerif", Font.PLAIN, 14));
             g.setColor(Color.LIGHT_GRAY);
-            g.drawString("정답이면 다음 스테이지 / 오답이면 이 스테이지부터 다시 시작", x, y);
+        }
+        
+        /**
+         * 인트로 상태에서 스토리 텍스트를 그립니다.
+         */
+        private void renderStoryOverlay(Graphics2D g) {
+            
+            // 배경 이미지/전체 배경 렌더링
+            if (introBGImg != null) {
+                g.drawImage(introBGImg, 0, 0, WIDTH, HEIGHT, null);
+            } else {
+                g.setColor(new Color(20, 20, 40)); 
+                g.fillRect(0, 0, WIDTH, HEIGHT);
+            }
+            
+            IntroManager manager = this.introManager;
+            
+            // 대화 박스
+            final int BOX_HEIGHT = 150; 
+            final int BOX_PADDING = 20; 
+            final int boxY = HEIGHT - BOX_HEIGHT; 
+            
+            g.setColor(new Color(20, 20, 40, 204)); 
+            g.fillRect(0, boxY, WIDTH, BOX_HEIGHT); 
+            
+            // 화자 이름 박스 렌더링
+            String speaker = manager.getCurrentSpeaker(); // 화자 이름 가져오기
+            
+            if (speaker != null) {
+                final int SPEAKER_BOX_HEIGHT = 40;
+                final int SPEAKER_BOX_WIDTH = 200; // 이름 상자 너비
+                final int speakerX = BOX_PADDING;
+                final int speakerY = boxY - SPEAKER_BOX_HEIGHT - 5; // 대화 박스 위 5px 간격
+                
+                // 이름 박스 배경
+                g.setColor(new Color(40, 40, 60, 220)); 
+                g.fillRect(speakerX, speakerY, SPEAKER_BOX_WIDTH, SPEAKER_BOX_HEIGHT);
+                
+                // 이름 텍스트
+                g.setColor(new Color(200, 200, 255));
+                g.setFont(g.getFont().deriveFont(Font.BOLD, 20f));
+                g.drawString(speaker, speakerX + 15, speakerY + 28); // 박스 내부에 이름 출력
+            }
+            // 대화 내용 렌더링
+            
+            g.setColor(Color.WHITE);
+            g.setFont(g.getFont().deriveFont(Font.PLAIN, 20f));
+            
+            String line = manager.getCurrentDialogue(); 
+            
+            int end = Math.min(manager.getCurrentCharIndex(), line.length());
+            String displayLine = line.substring(0, end); 
+            
+            int xPos = BOX_PADDING; 
+            int yPos = boxY + BOX_PADDING + 25; 
+            g.drawString(displayLine, xPos, yPos);
+            
+            // 안내 메시지 렌더링
+            if (manager.isStoryEnd() || manager.isTypingComplete()) { 
+                 g.setColor(Color.YELLOW);
+                 g.setFont(g.getFont().deriveFont(Font.BOLD, 24f));
+                 String msg = manager.isStoryEnd() ? "Press ENTER to start the Tutorial!" : "Enter 키를 눌러 진행";
+                 
+                 int msgWidth = g.getFontMetrics().stringWidth(msg);
+                 int msgX = WIDTH - msgWidth - BOX_PADDING; 
+                 int msgY = boxY + BOX_HEIGHT - BOX_PADDING; 
+
+                 g.drawString(msg, msgX, msgY);
+            }
         }
         
         /** 엔딩 화면: StageStory의 텍스트를 사용 */
@@ -764,10 +912,10 @@ public class GameCore {
             
             boolean good = lastAnswerCorrect; 
             String title = StageStory.getEndingTitle(currentStageIndex, good);
-            // ⭐️ StageStory에서 모든 라인을 가져옵니다.
+            // StageStory에서 모든 라인 가져오기
             String[] allLines = StageStory.getEndingLines(currentStageIndex, good);
             
-            // 1. 반투명 박스 배경
+            // 반투명 박스 배경
             g.setColor(new Color(0, 0, 0, 200));
             g.fillRect(50, 50, WIDTH - 100, HEIGHT - 100);
 
@@ -775,14 +923,14 @@ public class GameCore {
             int yCursor = 100;
             int lineHeight = 28;
 
-            // 2. 제목
+            // 제목
             g.setFont(new Font("SansSerif", Font.BOLD, 30));
             g.setColor(good ? new Color(100, 200, 255) : new Color(255, 150, 150)); 
             g.drawString(title, x, yCursor);
             
-            yCursor += 50; // 제목과 스토리 간격
+            yCursor += 50;
 
-            // 3. 스토리 텍스트 출력
+            // 스토리 텍스트 출력
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 16));
             
@@ -800,9 +948,9 @@ public class GameCore {
                 yCursor += lineHeight;
             }
 
-            // 4. 복구 성과 (우상단으로 이동 및 고정 좌표 사용)
+            // 복구 성과
             if (info != null) {
-                // ⭐️ 성과 섹션 시작 고정 좌표 (타이핑 완료 여부와 관계 없이 항상 표시)
+                // 성과 섹션 시작 고정 좌표
                 int statsX = WIDTH - 300;
                 int statsY = 100;
                 
@@ -836,7 +984,7 @@ public class GameCore {
                 g.drawString(time, xValue - g.getFontMetrics().stringWidth(time), statsY);
             }
 
-            // 5. 다음 진행 안내 (하단 고정)
+            // 다음 진행 안내
             int finalYPosition = HEIGHT - 80;
             
             g.setFont(new Font("SansSerif", Font.BOLD, 18));
@@ -857,21 +1005,87 @@ public class GameCore {
         
         /** 최종 엔딩 화면: Stage3 클리어 후 호출 */
         private void renderFinalEnding(Graphics2D g) {
-            
-            boolean goodEnding = lastAnswerCorrect;
+        	boolean overallGoodEnding = this.finalResultGood;
+        	StageInfo info = stageInfos[currentStageIndex];
+        	
+        	if (info.isTypingFinished()) {
+                
+                // 2단계 엔딩 화면
+                g.setColor(Color.BLACK);
+                g.fillRect(0, 0, WIDTH, HEIGHT);
+                
 
-            StageInfo info = stageInfos[currentStageIndex];
-            String[] allLines = StageStory.getEndingLines(currentStageIndex, goodEnding);
+                g.setColor(Color.WHITE);
+                g.setFont(new Font("SansSerif", Font.PLAIN, 18)); // 텍스트 크기를 작게 조정
+                
+                String[] lines = finalEndingPhase2Text.split("\n");
+                int lineHeight = g.getFontMetrics().getHeight();
+                int startY = HEIGHT / 2 - (lines.length * lineHeight) / 2;
+                
+                int totalCharsInPhase2 = finalEndingPhase2Text.length();
+                boolean isTypingFinished = (phase2CurrentCharIndex >= totalCharsInPhase2); 
+                int charsRenderedBeforeCurrentLine = 0;
+                
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i];
+                    int lineLength = line.length();
+                    
+                    int charsToDrawOnThisLine = 0;
+                    
+                    if (phase2CurrentCharIndex > charsRenderedBeforeCurrentLine) {
+                        int availableChars = phase2CurrentCharIndex - charsRenderedBeforeCurrentLine;
+                        charsToDrawOnThisLine = Math.min(lineLength, availableChars);
+                    }
+                    
+                    if (charsToDrawOnThisLine > 0) {
+                        // ⭐️ 핵심: 부분 문자열(partialLine)만 그립니다. ⭐️
+                        String partialLine = line.substring(0, charsToDrawOnThisLine);
+                        
+                        int x = (WIDTH - g.getFontMetrics().stringWidth(line)) / 2;
+                        g.drawString(partialLine, x, startY + i * lineHeight);
+                    }
+                    
+                    // 다음 줄로 넘어가기 전 카운터 업데이트
+                    charsRenderedBeforeCurrentLine += lineLength + 1;
+                }
+                
+                g.setFont(new Font("SansSerif", Font.BOLD, 14));
+                g.setColor(new Color(100, 255, 100));
+                String prompt = "Enter 키를 눌러 메인 화면으로";
+                int promptX = (WIDTH - g.getFontMetrics().stringWidth(prompt)) / 2;
+                if (isTypingFinished) {
+                    g.drawString(prompt, promptX, HEIGHT - 50);
+                }
+
+                return;
+            }
+            String[] allLines = StageStory.getEndingLines(currentStageIndex, overallGoodEnding); 
             
-            // 배경 설정
-            g.setColor(Color.BLACK);
-            g.fillRect(0, 0, WIDTH, HEIGHT);
+            BufferedImage bgImage = null;
+
+            if (overallGoodEnding) {
+                bgImage = this.goodEndingBG; // 굿 엔딩 이미지
+            } else {
+                bgImage = this.badEndingBG;  // 배드 엔딩 이미지
+            }
+
+            if (bgImage != null) {
+                g.drawImage(bgImage, 0, 0, WIDTH, HEIGHT, null);
+                
+                g.setColor(new Color(0, 0, 0, 150));
+                g.fillRect(0, 0, WIDTH, HEIGHT);
+            } else {
+                g.setColor(Color.BLACK);
+                g.fillRect(0, 0, WIDTH, HEIGHT);
+            }
             
-            // 최종 엔딩 타이틀 (Y=70)
+            // ----------------------------------------------------------------------
+            // 최종 엔딩 타이틀
             g.setFont(new Font("SansSerif", Font.BOLD, 60));
-            g.setColor(goodEnding ? new Color(100, 200, 255) : new Color(255, 100, 100));
             
-            String title = StageStory.getEndingTitle(currentStageIndex, goodEnding);
+            g.setColor(overallGoodEnding ? new Color(150, 220, 255) : new Color(255, 150, 150)); 
+            
+            String title = StageStory.getEndingTitle(currentStageIndex, overallGoodEnding);
             int titleX = (WIDTH - g.getFontMetrics().stringWidth(title)) / 2;
             g.drawString(title, titleX, 70);
             
@@ -883,32 +1097,32 @@ public class GameCore {
             g.setColor(Color.WHITE);
             g.setFont(new Font("SansSerif", Font.PLAIN, 24));
             
-            // [추가] 루프를 돌면서 타이핑 상태에 따라 텍스트를 출력합니다.
             for (int i = 0; i < allLines.length; i++) {
                 String line = allLines[i];
                 
                 if (i < info.getCurrentLineIndex()) {
-                    // 이미 타이핑이 완료된 줄: 전체를 그립니다.
                     g.drawString(line, x, yCursor);
                 } else if (i == info.getCurrentLineIndex()) {
-                    // 현재 타이핑 중인 줄: 부분만 그립니다.
                     int end = Math.min(info.getCurrentCharIndex(), line.length());
                     String partialLine = line.substring(0, end);
                     g.drawString(partialLine, x, yCursor);
-                    
-                    // 아직 시작하지 않은 줄 (i > currentLineIndex)은 그리지 않습니다.
                 }
                 
                 yCursor += lineHeight;
             }
             
-            // 4. 게임 종료 안내 (하단 고정)
-            int finalYPosition = HEIGHT - 80;
-            
+            // ----------------------------------------------------------------------
+            // 게임 종료 안내
+            int finalYPosition = HEIGHT - 50;
+
             g.setFont(new Font("SansSerif", Font.BOLD, 22));
             g.setColor(new Color(100, 255, 100)); 
-            String finalMsg = "게임을 플레이해 주셔서 감사합니다. (Press Enter to TUTORIAL)";
-            int msgX = (WIDTH - g.getFontMetrics().stringWidth(finalMsg)) / 2;
+            String finalMsg = "Enter";
+
+            int margin = 50;
+            int msgWidth = g.getFontMetrics().stringWidth(finalMsg);
+            int msgX = WIDTH - margin - msgWidth; 
+
             g.drawString(finalMsg, msgX, finalYPosition);
         }
 
@@ -992,12 +1206,23 @@ public class GameCore {
         
         // MenuPanel에서 게임 시작시 상태 초기화 (Pause - Menu 돌아온 후 게임 시작시 PAUSE 화면이 나오는 오류 때문에)
         public void resetStateToTutorial() {
-            // GameState를 TUTORIAL로 강제 변경
             this.state = GameState.TUTORIAL; 
             
-            // PausePanel이 떠 있는 상태라면 숨김 처리 (안전 장치)
             if (this.pausePanel != null) {
                 this.pausePanel.setVisible(false);
+            }
+            // 2차 엔딩 타이핑 상태 초기화
+            this.phase2CurrentCharIndex = 0;
+            this.phase2TypingTimer = 0.0;
+            
+            // 모든 StageInfo 객체의 엔딩 플래그 초기화 (resetForRetry 사용)
+            if (this.stageInfos != null) {
+                for (int i = 0; i < this.stageInfos.length; i++) {
+                    if (this.stageInfos[i] != null) {
+                        // resetForRetry 호출
+                        this.stageInfos[i].resetForRetry(this.stageInfos[i].getTotalStars()); 
+                    }
+                }
             }
         }
         
@@ -1016,45 +1241,84 @@ public class GameCore {
         private void updateEndingTyping(double dt) {
             StageInfo info = stageInfos[currentStageIndex];
             if (info == null) return;
+            
+            // 1차 엔딩 타이핑 로직
+            if (!info.isTypingFinished()) { 
+                
+                // 타이머 업데이트
+                double newTimer = info.getTypingTimer() + dt;
+                info.setTypingTimer(newTimer);
+                
+                int currentLine = info.getCurrentLineIndex();
+                double textSpeed = info.getTextDisplaySpeed();
+                
+                // StageStory에서 모든 줄 가져오기
+                String[] allLines = StageStory.getEndingLines(currentStageIndex, lastAnswerCorrect);
+                
+                // 현재 줄 인덱스가 유효 범위를 벗어나면, 타이핑을 완료 상태로 처리하고 종료
+                if (currentLine >= allLines.length) {
+                    info.finishTypingAndCheckEnd();
+                    return; 
+                }
 
-            // ⭐️ [Getter/Setter 사용] 타이머 업데이트
-            double newTimer = info.getTypingTimer() + dt;
-            info.setTypingTimer(newTimer);
-            
-            // 현재 줄 인덱스 및 속도 가져오기
-            int currentLine = info.getCurrentLineIndex();
-            double textSpeed = info.getTextDisplaySpeed();
-            
-            // StageStory에서 모든 줄 가져오기
-            String[] allLines = StageStory.getEndingLines(currentStageIndex, lastAnswerCorrect);
-            
-            // 현재 줄 인덱스가 유효 범위를 벗어나면 업데이트 중지 (모든 타이핑 완료)
-            if (currentLine >= allLines.length) {
-                return; 
-            }
-            
-            // 현재 줄의 전체 글자 수
-            int totalCharsInLine = allLines[currentLine].length();
-            
-            // 타이머를 글자 수로 변환하여 목표 글자 수 계산
-            int targetCharCount = (int) (info.getTypingTimer() / textSpeed); 
-            
-            if (targetCharCount >= totalCharsInLine) {
-                // 1. 현재 줄 타이핑 완료
-                info.setCurrentCharIndex(totalCharsInLine);
+                int totalCharsInLine = allLines[currentLine].length();
+                
+                int targetCharCount = (int) (info.getTypingTimer() / textSpeed); 
+                
+                if (targetCharCount >= totalCharsInLine) {
+                    info.setCurrentCharIndex(totalCharsInLine);
 
-                // 2. 다음 줄로 자동 이동 (0.5초 대기 후 다음 줄로 넘어간다고 가정합니다)
-                if (currentLine < allLines.length - 1) {
-                    if (info.getTypingTimer() >= totalCharsInLine * textSpeed + 0.5) { 
-                         info.setCurrentLineIndex(currentLine + 1);
-                         info.setTypingTimer(0.0);
-                         info.setCurrentCharIndex(0);
+                    if (currentLine < allLines.length - 1) { 
+                        
+                        // 타이핑 완료 이후 대기시간 0.01
+                        if (info.getTypingTimer() >= totalCharsInLine * textSpeed + 0.01) { 
+                             info.setCurrentLineIndex(currentLine + 1);
+                             info.setTypingTimer(0.0); // 타이머 초기화 중요!
+                             info.setCurrentCharIndex(0);
+                        }
+                    } else { 
                     }
+                } else {
+                    info.setCurrentCharIndex(targetCharCount);
                 }
                 
-            } else {
-                // 3. 타이핑 진행 중
-                info.setCurrentCharIndex(targetCharCount);
+                return;
+            }
+            
+            /** 2차 엔딩 (검은 화면) 타이핑 로직 (1차 엔딩 완료 후 실행됨)
+             *  1차 타이핑이 완료 이후 2차 타이핑 시작 */
+            if (info.isTypingFinished()) {
+            	
+            	if (phase2CurrentCharIndex == 0 && phase2TypingTimer == 0.0) { 
+                    if (GameCore.getSoundManager() != null) {
+                        // 기존 스테이지 BGM 정지
+                        GameCore.getSoundManager().stopBGM(); 
+                        // 타이핑 소리 재생
+                        GameCore.getSoundManager().playBGM(SoundManager.SFX_TYPING); 
+                    }
+                }
+            	
+                // 2차 엔딩 텍스트 길이 계산
+                int totalChars = finalEndingPhase2Text.length();
+                
+                if (phase2CurrentCharIndex < totalChars) {
+                	
+                    phase2TypingTimer += dt;
+                    
+                    // 타이머 값에 따라 출력할 글자 수 계산
+                    int charsToDisplay = (int) (phase2TypingTimer / phase2TextDisplaySpeed);
+                    
+                    if (charsToDisplay > phase2CurrentCharIndex) {
+                        phase2CurrentCharIndex = Math.min(charsToDisplay, totalChars);
+                    }
+                    
+                    if (phase2CurrentCharIndex >= totalChars) {
+                        // 타이핑 소리 정지
+                        if (GameCore.getSoundManager() != null) {
+                             GameCore.getSoundManager().stopBGM(); 
+                        }
+                    }
+                }
             }
         }
 
@@ -1071,6 +1335,20 @@ public class GameCore {
         @Override
         public void keyPressed(KeyEvent e) {
             int code = e.getKeyCode();
+            
+            // ⭐️ INTRO 상태 처리
+            if (state == GameState.INTRO) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    if (introManager.advanceLine()) { // 다음 줄로 넘어가거나 타이핑 강제 완료
+                        if (introManager.isStoryEnd()) {
+                            // 스토리가 끝났으면 다음 상태로 전환
+                            loadStage(0); // 튜토리얼 시작
+                            state = GameState.TUTORIAL; 
+                        }
+                    }
+                }
+                return;
+            }
 
             if (code == KeyEvent.VK_ESCAPE) {
                 if (state == GameState.PAUSE) {

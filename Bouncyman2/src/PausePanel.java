@@ -22,16 +22,13 @@ public class PausePanel extends JPanel implements ActionListener {
         this.mainContainer = mainContainer;
 
         // 패널 설정
-        // 투명도를 가진 배경색 (게임 화면이 뒤에 살짝 보이도록)
         setBackground(new Color(0, 0, 0, 180)); 
         setOpaque(false);
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
         
-        // PausePanel은 GamePanel 위에 정확히 겹치도록 null 레이아웃을 사용
         setLayout(new GridBagLayout()); 
         
         // --- 컴포넌트 구성 ---
-        
         JLabel titleLabel = new JLabel("PAUSED");
         titleLabel.setForeground(Color.WHITE);
         titleLabel.setFont(new Font("SansSerif", Font.BOLD, 48));
@@ -40,21 +37,21 @@ public class PausePanel extends JPanel implements ActionListener {
         Dimension buttonSize = new Dimension(220, 50);
         Font buttonFont = new Font("SansSerif", Font.BOLD, 18);
         
-        // 1. 게임 재개 버튼
+        // 게임 재개 버튼
         JButton resumeButton = new JButton("게임 재개");
         resumeButton.setPreferredSize(buttonSize);
         resumeButton.setFont(buttonFont);
         resumeButton.setActionCommand("RESUME");
         resumeButton.addActionListener(this);
         
-        // 2. 메인 메뉴로 버튼
+        // 메인 메뉴로 버튼
         JButton menuButton = new JButton("메인 메뉴");
         menuButton.setPreferredSize(buttonSize);
         menuButton.setFont(buttonFont);
         menuButton.setActionCommand("GO_TO_MENU");
         menuButton.addActionListener(this);
         
-        // 3. 게임 종료 버튼
+        // 게임 종료 버튼
         JButton exitButton = new JButton("게임 종료");
         exitButton.setPreferredSize(buttonSize);
         exitButton.setFont(buttonFont);
@@ -91,7 +88,7 @@ public class PausePanel extends JPanel implements ActionListener {
         CardLayout cl = (CardLayout) mainContainer.getLayout();
 
         if ("RESUME".equals(command)) {
-            // GamePanel의 재개 메서드를 호출하여 상태 변경 및 PausePanel 숨김
+            // GamePanel의 재개 메서드 호출해서 상태 변경 및 PausePanel 숨김
             gamePanel.resumeGame();
             
         } else if ("GO_TO_MENU".equals(command)) {
@@ -104,7 +101,6 @@ public class PausePanel extends JPanel implements ActionListener {
             cl.show(mainContainer, GameCore.CARD_MENU);
             
         } else if ("EXIT".equals(command)) {
-            // 프로그램 종료
             System.exit(0);
         }
     }

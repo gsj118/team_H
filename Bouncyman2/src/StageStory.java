@@ -9,7 +9,7 @@ public class StageStory {
         if (stageIndex == 0) return good ? "부트 시퀀스 준비 완료" : "부트 시퀀스 오류";
         if (stageIndex == 1) return good ? "CPU 코어 정렬 성공" : "코어 불안정";
         if (stageIndex == 2) return good ? "메모리·캐시 정렬 완료" : "메모리 접근 오류";
-        if (stageIndex == 3) return good ? "행성 탈출 성공" : "행성 잔류 결말";
+        if (stageIndex == 3) return good ? "GAME CLEAR" : "GAVE OVER";
 
         return good ? "GOOD ENDING" : "BAD ENDING";
     }
@@ -85,9 +85,8 @@ public class StageStory {
                         "CPU, 메모리, I/O까지 모든 구조가 한 번의 시퀀스로 맞물립니다.",
                         "우주선은 거대한 굉음을 내며 부트 시퀀스를 완료합니다.",
                         "확장 모듈 덕분에 내부 좌석도 넉넉해졌습니다.",
-                        "파일럿은 유리창 너머로 손을 내밀며 말합니다.",
+                        "파일럿은 웃으며 말합니다.",
                         "\"이번엔… 너도 같이 가는 거야.\"",
-                        "당신은 동료들과 함께 우주선을 타고 이 행성을 떠납니다."
                     };
                 } else {
                     return new String[]{
@@ -100,8 +99,6 @@ public class StageStory {
                         " 다음에 올 누군가를 위해, 시스템을 지켜둘게.\"",
                         "우주선은 이륙하고, 마지막 남은 좌석은",
                         "당신이 아닌 다른 동료가 차지합니다.",
-                        "당신은 거대한 컴퓨터 구조가 된 이 행성 위에 홀로 남아,",
-                        "언젠가 또 올 탈출 시도를 위해 시스템을 지켜보기로 합니다."
                     };
                 }
         }
