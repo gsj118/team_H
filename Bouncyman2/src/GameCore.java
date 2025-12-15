@@ -1253,7 +1253,8 @@ public class GameCore {
                 double textSpeed = info.getTextDisplaySpeed();
                 
                 // StageStory에서 모든 줄 가져오기
-                String[] allLines = StageStory.getEndingLines(currentStageIndex, lastAnswerCorrect);
+                boolean endingResult = (currentStageIndex == 3) ? this.finalResultGood : this.lastAnswerCorrect;
+                String[] allLines = StageStory.getEndingLines(currentStageIndex, endingResult);
                 
                 // 현재 줄 인덱스가 유효 범위를 벗어나면, 타이핑을 완료 상태로 처리하고 종료
                 if (currentLine >= allLines.length) {
@@ -1269,14 +1270,19 @@ public class GameCore {
                     info.setCurrentCharIndex(totalCharsInLine);
 
                     if (currentLine < allLines.length - 1) { 
-                        
-                        // 타이핑 완료 이후 대기시간 0.01
-                        if (info.getTypingTimer() >= totalCharsInLine * textSpeed + 0.01) { 
+
+                        if (info.getTypingTimer() >= totalCharsInLine * textSpeed + 0.05) { 
                              info.setCurrentLineIndex(currentLine + 1);
                              info.setTypingTimer(0.0); // 타이머 초기화 중요!
                              info.setCurrentCharIndex(0);
                         }
                     } else { 
+                        if (info.getTypingTimer() >= totalCharsInLine * textSpeed + 0.05) { 
+                            if (currentStageIndex == 3) {
+                            } else {
+                                info.finishTypingAndCheckEnd(); 
+                            }
+                        }
                     }
                 } else {
                     info.setCurrentCharIndex(targetCharCount);
