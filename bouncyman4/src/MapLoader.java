@@ -12,7 +12,8 @@ import java.util.List;
  *   'Y' : GEM_YELLOW (노란 보석)
  *   'B' : GEM_BLUE (파란 보석)
  *   'P' : 플레이어 시작 위치
- *   
+ *   'L' : LAVA 닿으면 즉시 죽는 용암
+ *
  * 맵 담당자는 아래 getXXXLines() 메서드의 문자열만 수정/추가하면 됨.
  */
 public class MapLoader {
@@ -22,7 +23,6 @@ public class MapLoader {
         WALL,
         SPIKE,
         STAR,
-        DOOR,
         GEM_YELLOW,
         GEM_BLUE,
         LAVA,
@@ -240,3 +240,4 @@ public class MapLoader {
         return rows.toArray(new String[0]);
     }
 }
+
