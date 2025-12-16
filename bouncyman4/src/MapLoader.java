@@ -12,7 +12,7 @@ import java.util.List;
  *   'Y' : GEM_YELLOW (노란 보석)
  *   'B' : GEM_BLUE (파란 보석)
  *   'P' : 플레이어 시작 위치
- *
+ *   
  * 맵 담당자는 아래 getXXXLines() 메서드의 문자열만 수정/추가하면 됨.
  */
 public class MapLoader {
@@ -24,7 +24,9 @@ public class MapLoader {
         STAR,
         DOOR,
         GEM_YELLOW,
-        GEM_BLUE
+        GEM_BLUE,
+        LAVA,
+        
     }
 
     /** 실제 게임에 사용되는 맵 데이터 */
@@ -94,10 +96,7 @@ public class MapLoader {
                         break;
                     case 'K':
                         type = TileType.SPIKE;
-                        break;
-                    case 'D':
-                        type = TileType.DOOR;
-                        break;
+                        break;                  
                     case 'Y':
                         type = TileType.GEM_YELLOW;
                         break;
@@ -109,6 +108,11 @@ public class MapLoader {
                         playerStartX = x;
                         playerStartY = y;
                         break;
+                    case 'L':
+                        type = TileType.LAVA;
+                        break;
+
+               
                     case '.':
                     default:
                         type = TileType.EMPTY;
@@ -136,9 +140,14 @@ public class MapLoader {
      */
     private static String[] getTutorialMapLines() {
         List<String> rows = new ArrayList<>();
-
+        
+        
+        
+        
+        
         rows.add("##############################"); // 0
-        rows.add("#............................#"); // 1
+        rows.add("#............................#");
+        rows.add("#............................#");// 1
         rows.add("#............................#"); // 2
         rows.add("#..............Y.............#"); // 3 (2층 노란 보석)
         rows.add("#.........KKK................#"); // 4
@@ -172,7 +181,7 @@ public class MapLoader {
         rows.add("#............................#");
         rows.add("#............................#");
         rows.add("#.........B....B.............#");
-        rows.add("#......#...........B.........#");
+        rows.add("#......#...........Y.........#");
         rows.add("#....#.......................#");
         rows.add("#P.#........................S#"); // 플레이어 시작 위치
         rows.add("####KKKKKKKKKKKKKKKKKKKKKK..##");
@@ -198,7 +207,7 @@ public class MapLoader {
         rows.add("#.........KKK................#");
         rows.add("#............................#");
         rows.add("#............................#");
-        rows.add("#KKKKKKKKKKKKKKKKKKKKKKKKKKKK#");
+        rows.add("#LLLLLLLLLLLLLLLLLLLLLLLLLLLL#");
         rows.add("##############################");
         rows.add("##############################");
         rows.add("##############################");
