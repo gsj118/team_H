@@ -12,7 +12,9 @@ import java.util.List;
  *   'Y' : GEM_YELLOW (노란 보석)
  *   'B' : GEM_BLUE (파란 보석)
  *   'P' : 플레이어 시작 위치
- *   'L' : LAVA 닿으면 즉시 죽는 용암
+ *   'L' : LAVA (용암 타일)
+ *   'G' : GEAR_LR   "좌우로 1~2칸" 움직이는 톱니바퀴 스폰
+ *   'H' : GEAR_UD     "위아래로 1~2칸" 움직이는 톱니바퀴 스폰
  *
  * 맵 담당자는 아래 getXXXLines() 메서드의 문자열만 수정/추가하면 됨.
  */
@@ -23,10 +25,13 @@ public class MapLoader {
         WALL,
         SPIKE,
         STAR,
+        DOOR,
         GEM_YELLOW,
         GEM_BLUE,
-        LAVA,
-        
+        LAVA,   // 용암
+        // *추가* 움직이는 톱니바퀴 
+        GEAR_LR,   // 'G'   left and right
+        GEAR_UD     // 'H'  // up and down
     }
 
     /** 실제 게임에 사용되는 맵 데이터 */
@@ -38,15 +43,29 @@ public class MapLoader {
         public final int playerStartY;
         public final int totalStars;
 
+        // (추가) 기어 스폰(타일 좌표)
+        public final List<Point> gearDownSpawns; // 'G' : 좌우 이동 기어
+        public final List<Point> gearUpSpawns;   // 'H' : 상하 이동 기어
+
         public MapData(TileType[][] tiles, int width, int height,
-                       int playerStartX, int playerStartY, int totalStars) {
+                       int playerStartX, int playerStartY, int totalStars,
+                       List<Point> gearDownSpawns, List<Point> gearUpSpawns) {
             this.tiles = tiles;
             this.width = width;
             this.height = height;
             this.playerStartX = playerStartX;
             this.playerStartY = playerStartY;
             this.totalStars = totalStars;
+            this.gearDownSpawns = gearDownSpawns;
+            this.gearUpSpawns = gearUpSpawns;
         }
+    }
+
+    // (추가) MapLoader 내부에서만 쓰는 간단한 좌표 클래스(외부 라이브러리 추가 없이)
+    public static class Point {
+        public final int x;
+        public final int y;
+        public Point(int x, int y) { this.x = x; this.y = y; }
     }
 
     public static MapData loadStage(int stageIndex) {
@@ -78,6 +97,10 @@ public class MapLoader {
         int playerStartY = 0;
         int starCount = 0;
 
+        // (추가) 기어 스폰 위치 수집
+        List<Point> gearDownSpawns = new ArrayList<>(); // 'G'
+        List<Point> gearUpSpawns   = new ArrayList<>(); // 'H'
+
         for (int y = 0; y < height; y++) {
             String row = lines[y];
             if (row.length() != width) {
@@ -96,7 +119,7 @@ public class MapLoader {
                         break;
                     case 'K':
                         type = TileType.SPIKE;
-                        break;                  
+                        break;
                     case 'Y':
                         type = TileType.GEM_YELLOW;
                         break;
@@ -112,7 +135,17 @@ public class MapLoader {
                         type = TileType.LAVA;
                         break;
 
-               
+                    // (추가) 톱니바퀴 스폰. 타일은 EMPTY로 둔다.
+                    //  - 이유: 기어는 "오브젝트"로 따로 움직이므로, 맵 충돌(벽)과 섞지 않기 위해
+                    case 'G':
+                        type = TileType.EMPTY;
+                        gearDownSpawns.add(new Point(x, y));
+                        break;
+                    case 'H':
+                        type = TileType.EMPTY;
+                        gearUpSpawns.add(new Point(x, y));
+                        break;
+
                     case '.':
                     default:
                         type = TileType.EMPTY;
@@ -127,24 +160,14 @@ public class MapLoader {
         int px = playerStartX * tileSize + (int) (tileSize * 0.15);
         int py = playerStartY * tileSize - (int) (tileSize * 0.1);
 
-        return new MapData(tiles, width, height, px, py, starCount);
+        return new MapData(tiles, width, height, px, py, starCount, gearDownSpawns, gearUpSpawns);
     }
 
     // ---------------- 튜토리얼 맵 ----------------
 
-    /**
-     * 튜토리얼
-     * - 1층 이동 연습
-     * - 오른쪽 파란 보석(B) → 2층 점프
-     * - 2층 노란 보석(Y) → 왼쪽 별(S) 대시로 획득
-     */
     private static String[] getTutorialMapLines() {
         List<String> rows = new ArrayList<>();
-        
-        
-        
-        
-        
+
         rows.add("##############################"); // 0
         rows.add("#............................#");
         rows.add("#............................#");// 1
@@ -156,7 +179,7 @@ public class MapLoader {
         rows.add("#.........................B.##"); // 7
         rows.add("#............................#"); // 8
         rows.add("#.......................#....#"); // 9
-        rows.add("#..P.B..KK...........B.......#"); //10 (1층 시작 + 파란 보석)
+        rows.add("#..P.B..KK....G..H...B.......#"); //10 (1층 시작 + 파란 보석)
         rows.add("##############################"); //11
         rows.add("##############################"); //12
         rows.add("##############################"); //13
@@ -166,11 +189,6 @@ public class MapLoader {
         return rows.toArray(new String[0]);
     }
 
-    // ---------------- Stage1~3 : 스토리 전용 빈 맵 ----------------
-
-    /**
-     * Stage1: CPU 코어 구역 - 스토리 전용, 별 없음 (자동 엔딩)
-     */
     private static String[] getStage1Lines() {
         List<String> rows = new ArrayList<>();
         rows.add("##############################");
@@ -180,26 +198,23 @@ public class MapLoader {
         rows.add("#............................#");
         rows.add("#............................#");
         rows.add("#............................#");
-        rows.add("#.........B....B.............#");
+        rows.add("#......H..B....B.............#");
         rows.add("#......#...........Y.........#");
         rows.add("#....#.......................#");
-        rows.add("#P.#........................S#"); // 플레이어 시작 위치
-        rows.add("####KKKKKKKKKKKKKKKKKKKKKK..##");
-        rows.add("##############################");
+        rows.add("#...#........................#"); // 플레이어 시작 위치
+        rows.add("#BG...P.....................S#");
+        rows.add("#######LLLLLLLLLLLLLLLLLLLL###");
         rows.add("##############################");
         rows.add("##############################");
         rows.add("##############################");
         return rows.toArray(new String[0]);
     }
 
-    /**
-     * Stage2: 메모리·캐시 구역 - 스토리 전용, 별 없음 (자동 엔딩)
-     */
     private static String[] getStage2Lines() {
         List<String> rows = new ArrayList<>();
         rows.add("##############################");
-        rows.add("#.....#..#...#...#...#...#...S");
-        rows.add("#.P......#...#...#...#.......#");
+        rows.add("#.....H..H...#...#...#...#...S");
+        rows.add("#.P..........#...#...#.....G.#");
         rows.add("###..............#...#....#..#");
         rows.add("#..KKK#..#...#..........#....#");
         rows.add("#......KK..B..K.#...#.#......#");
@@ -216,9 +231,6 @@ public class MapLoader {
         return rows.toArray(new String[0]);
     }
 
-    /**
-     * Stage3: I/O·방어 모듈 구역 - 스토리 전용, 별 없음 (자동 엔딩)
-     */
     private static String[] getStage3Lines() {
         List<String> rows = new ArrayList<>();
         rows.add("##############################");
@@ -231,7 +243,7 @@ public class MapLoader {
         rows.add("#............................#");
         rows.add("#............................#");
         rows.add("#............................#");
-        rows.add("#P...........................#");
+        rows.add("#P...#......................S#");
         rows.add("##############################");
         rows.add("##############################");
         rows.add("##############################");
@@ -240,4 +252,3 @@ public class MapLoader {
         return rows.toArray(new String[0]);
     }
 }
-
