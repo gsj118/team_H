@@ -6,13 +6,10 @@ import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-
-//(추가) O/X 퀴즈 시스템
-//- 별을 다 먹으면(스테이지 1~3) QUESTION 상태로 전환
-//- QuestionBox에서 문제 1개를 뽑아와 표시/정답 판정
 
 /**
  * GameCore
@@ -129,8 +126,8 @@ public class GameCore {
         private boolean waitingForQuestionAnswer = false;
         private boolean lastAnswerCorrect = false;
 
-        // (추가) 현재 스테이지 퀴즈 (QuestionBox.java에서 뽑아옴)
-        private QuestionBox.Quiz currentQuiz;
+        // 현재 스테이지 퀴즈 (QuestionBox.java에서 뽑아옴)
+         QuestionBox.Quiz currentQuiz;
 
         // 튜토리얼 도움말 표시 여부(H 키로 토글)
         private boolean tutorialOverlayVisible = true;
@@ -144,7 +141,7 @@ public class GameCore {
         private BufferedImage blueJumpImg;
 
         // 타일/아이템 이미지
-        private BufferedImage tileLavaImg;   // 기존 WALL 이미지(lava.png)
+        private BufferedImage tileWallImg;   // 기존 WALL 이미지(lava.png)
         private BufferedImage coinImg;
         private BufferedImage gemYellowImg;
         private BufferedImage gemBlueImg;
@@ -158,7 +155,7 @@ public class GameCore {
         // UI: 일시정지 전 상태 저장
         private GameState lastPlayState = GameState.TUTORIAL;
 
-        // ---------------- (추가) 스테이지 배경 ----------------
+        // ---------------- 스테이지 배경 ----------------
         private BufferedImage bgTutorialImg;
         private BufferedImage bgStage1Img;
         private BufferedImage bgStage2Img;
@@ -171,10 +168,24 @@ public class GameCore {
         // ------------------------------------------------------
 
         // ---------------- (추가) L(용암) GIF 타일 ----------------
-        private static final String LAVA_GIF_PATH = "image/lava real.gif"; // 네 파일명 그대로
+        private static final String LAVA_GIF_PATH = "image/lava real.gif";
         private static final double LAVA_FPS = 12.0;
         private List<BufferedImage> lavaFrames = new ArrayList<>();
         private double lavaAnimTime = 0.0;
+        // ------------------------------------------------------
+
+        // ---------------- (추가) 움직이는 톱니바퀴(G , H) ----------------
+        // - 투명 처리한 GIF 사용 권장
+        private static final String GEAR_GIF_PATH = "image/gear_G.gif";
+        private static final double GEAR_FPS = 12.0;
+        private List<BufferedImage> gearFrames = new ArrayList<>();
+        private double gearAnimTime = 0.0;
+
+        // 추가: "한두칸" 이동폭/속도(필요하면 여기 숫자만 바꾸면 됨)
+        private static final double GEAR_MOVE_TILES = 1.5; // 1~2칸 정도
+        private static final double GEAR_MOVE_SPEED = 1.8; // 움직임 속도(진동 주기)
+
+        private final List<Gear> gears = new ArrayList<>();
         // ------------------------------------------------------
 
         public GamePanel() {
@@ -206,7 +217,7 @@ public class GameCore {
                 blueStandImg   = ImageIO.read(new File("image/alienBlue_stand.png"));
                 blueJumpImg    = ImageIO.read(new File("image/alienBlue_jump.png"));
 
-                tileLavaImg    = ImageIO.read(new File("image/lava.png"));
+                tileWallImg    = ImageIO.read(new File("image/lava.png"));
                 coinImg        = ImageIO.read(new File("image/coinGold.png"));
                 gemYellowImg   = ImageIO.read(new File("image/gemYellow.png"));
                 gemBlueImg     = ImageIO.read(new File("image/gemBlue.png"));
@@ -222,14 +233,20 @@ public class GameCore {
                 e.printStackTrace();
             }
 
-            // (추가) 용암 GIF 프레임 로딩
+            // 추가: 용암 GIF 프레임 로딩
             lavaFrames = loadGifFrames(LAVA_GIF_PATH);
             if (lavaFrames.isEmpty()) {
                 System.out.println("[LAVA] 로딩 실패: " + LAVA_GIF_PATH);
             }
+
+            // 추가: 기어 GIF 프레임 로딩
+            gearFrames = loadGifFrames(GEAR_GIF_PATH);
+            if (gearFrames.isEmpty()) {
+                System.out.println("[GEAR] 로딩 실패: " + GEAR_GIF_PATH);
+            }
         }
 
-        // (추가) GIF를 프레임 리스트로 분해
+        // 추가: GIF를 프레임 리스트로 분해
         private List<BufferedImage> loadGifFrames(String path) {
             List<BufferedImage> frames = new ArrayList<>();
             try (ImageInputStream stream = ImageIO.createImageInputStream(new File(path))) {
@@ -246,13 +263,13 @@ public class GameCore {
                 }
                 reader.dispose();
             } catch (Exception e) {
-                System.out.println("[LAVA] GIF 프레임 분해 실패: " + path);
+                System.out.println("[GIF] 프레임 분해 실패: " + path);
                 e.printStackTrace();
             }
             return frames;
         }
 
-        // (추가) LAVA 타일 그리기
+        // 추가: LAVA 타일 그리기
         private void drawAnimatedLava(Graphics2D g, int px, int py) {
             if (lavaFrames == null || lavaFrames.isEmpty()) {
                 g.setColor(Color.ORANGE);
@@ -261,6 +278,17 @@ public class GameCore {
             }
             int idx = (int)(lavaAnimTime * LAVA_FPS) % lavaFrames.size();
             g.drawImage(lavaFrames.get(idx), px, py, TILE_SIZE, TILE_SIZE, null);
+        }
+
+        // (추가) GEAR 그리기
+        private void drawAnimatedGear(Graphics2D g, int px, int py) {
+            if (gearFrames == null || gearFrames.isEmpty()) {
+                g.setColor(Color.GRAY);
+                g.fillOval(px + 3, py + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+                return;
+            }
+            int idx = (int)(gearAnimTime * GEAR_FPS) % gearFrames.size();
+            g.drawImage(gearFrames.get(idx), px, py, TILE_SIZE, TILE_SIZE, null);
         }
 
         public void startNewGame() {
@@ -343,7 +371,13 @@ public class GameCore {
             if (currentMap == null || player == null) return;
 
             coinAnimTime += dt;
-            lavaAnimTime += dt; // (추가) 용암 애니메이션 시간
+            lavaAnimTime += dt;
+            gearAnimTime += dt;
+
+            // (추가) 기어 움직임 업데이트
+            for (Gear gear : gears) {
+                gear.update(dt);
+            }
 
             handlePlayerInput(dt);
 
@@ -378,7 +412,7 @@ public class GameCore {
         }
 
         /**
-         * 타일과의 상호작용
+         * 타일/오브젝트와의 상호작용
          */
         private void handleTileInteractions() {
             int leftTile   = Math.max(0, (int) (player.getLeft()   / TILE_SIZE));
@@ -395,7 +429,6 @@ public class GameCore {
                             handlePlayerDeath();
                             return;
 
-                        // (추가) L(용암) 밟으면 즉사
                         case LAVA:
                             handlePlayerDeath();
                             return;
@@ -411,7 +444,6 @@ public class GameCore {
                                 if (currentStageIndex == 0) {
                                     StageInfo info = stageInfos[currentStageIndex];
                                     if (info != null) info.finishStageNow();
-
                                     loadStage(1);
                                     return;
                                 }
@@ -429,12 +461,21 @@ public class GameCore {
                             player.setFormBlue();
                             break;
 
-                        case DOOR:
                         case WALL:
+                        	
                         case EMPTY:
                         default:
                             break;
                     }
+                }
+            }
+
+            // (추가) 기어 충돌 체크: 원형 히트박스(기어=원)로 닿으면 즉사
+            Rectangle pr = player.getRect();
+            for (Gear gear : gears) {
+                if (gear.collidesWith(pr)) {
+                    handlePlayerDeath();
+                    return;
                 }
             }
         }
@@ -467,6 +508,9 @@ public class GameCore {
                             new StageInfo(currentStageIndex, getStageName(currentStageIndex), totalStarsInStage);
                 }
                 stageInfos[currentStageIndex].startStage();
+
+                // (추가) 맵에서 기어 스폰 정보로 기어 생성
+                rebuildGearsFromMap();
 
                 state = (currentStageIndex == 0) ? GameState.TUTORIAL : GameState.STAGE_PLAY;
             }
@@ -512,7 +556,37 @@ public class GameCore {
             player = new Player(map.playerStartX, map.playerStartY,
                     TILE_SIZE * 0.7, TILE_SIZE * 0.9);
 
+            // 추가: 맵에서 기어 스폰 정보로 기어 생성
+            rebuildGearsFromMap();
+
             state = (stageIndex == 0) ? GameState.TUTORIAL : GameState.STAGE_PLAY;
+        }
+
+        // 추가: MapLoader의 'G','H' 스폰 좌표로 기어 생성
+        private void rebuildGearsFromMap() {
+            gears.clear();
+            if (currentMap == null) return;
+
+            double ampPx = TILE_SIZE * GEAR_MOVE_TILES;  // 1~2칸 정도
+            double speed = GEAR_MOVE_SPEED;
+
+            // 'G' : 좌우 이동(왼쪽/오른쪽)
+            if (currentMap.gearDownSpawns != null) {
+                for (MapLoader.Point p : currentMap.gearDownSpawns) {
+                    double baseX = p.x * TILE_SIZE;
+                    double baseY = p.y * TILE_SIZE;
+                    gears.add(Gear.horizontal(baseX, baseY, ampPx, speed));
+                }
+            }
+
+            // 'H' : 상하 이동(위/아래)
+            if (currentMap.gearUpSpawns != null) {
+                for (MapLoader.Point p : currentMap.gearUpSpawns) {
+                    double baseX = p.x * TILE_SIZE;
+                    double baseY = p.y * TILE_SIZE;
+                    gears.add(Gear.vertical(baseX, baseY, ampPx, speed));
+                }
+            }
         }
 
         /** 별을 모두 먹었을 때 호출 (Stage1~3) */
@@ -622,15 +696,14 @@ public class GameCore {
 
                     switch (type) {
                         case WALL:
-                            if (tileLavaImg != null) {
-                                g.drawImage(tileLavaImg, px, py, TILE_SIZE, TILE_SIZE, null);
+                            if (tileWallImg != null) {
+                                g.drawImage(tileWallImg, px, py, TILE_SIZE, TILE_SIZE, null);
                             } else {
                                 g.setColor(Color.LIGHT_GRAY);
                                 g.fillRect(px, py, TILE_SIZE, TILE_SIZE);
                             }
                             break;
 
-                        // (추가) L 타일 = 용암 GIF
                         case LAVA:
                             drawAnimatedLava(g, px, py);
                             break;
@@ -657,14 +730,7 @@ public class GameCore {
                                 g.drawImage(gemBlueImg, px, py, TILE_SIZE, TILE_SIZE, null);
                             }
                             break;
-
-                        case DOOR:
-                            g.setColor(new Color(120, 80, 40));
-                            g.fillRect(px + TILE_SIZE / 8, py, TILE_SIZE * 3 / 4, TILE_SIZE);
-                            g.setColor(Color.BLACK);
-                            g.drawRect(px + TILE_SIZE / 8, py, TILE_SIZE * 3 / 4, TILE_SIZE);
-                            break;
-
+                    
                         case EMPTY:
                         default:
                             break;
@@ -674,6 +740,22 @@ public class GameCore {
                         g.setColor(new Color(0, 0, 0, 60));
                         g.drawRect(px, py, TILE_SIZE, TILE_SIZE);
                     }
+                }
+            }
+
+            // (추가) 기어(움직이는 톱니) 그리기
+            for (Gear gear : gears) {
+                int gx = (int) gear.x;
+                int gy = (int) gear.y + MAP_OFFSET_Y;
+                drawAnimatedGear(g, gx, gy);
+
+                if (debugDrawHitbox) {
+                    // 원형 히트박스 시각화
+                    double r = gear.getRadius();
+                    int cx = (int)(gx + TILE_SIZE / 2.0);
+                    int cy = (int)(gy + TILE_SIZE / 2.0);
+                    g.setColor(new Color(255, 0, 0, 160));
+                    g.drawOval((int)(cx - r), (int)(cy - r), (int)(r * 2), (int)(r * 2));
                 }
             }
 
@@ -1013,6 +1095,73 @@ public class GameCore {
         @Override
         public void keyTyped(KeyEvent e) {
         }
+
+        // ---------------- (추가) Gear 클래스 ----------------
+        // - 맵의 'G','H' 위치에서 생성
+        // - 'G' : 좌우 1~2칸 이동
+        // - 'H' : 상하 1~2칸 이동
+        // - 플레이어가 닿으면 즉사(원형 히트박스)
+        private static class Gear {
+            enum Axis { HORIZONTAL, VERTICAL }
+
+            final double baseX, baseY;
+            final Axis axis;
+            final double amp;
+            final double speed;
+
+            double t = 0.0;
+            double x, y;
+
+            private Gear(double baseX, double baseY, Axis axis, double amp, double speed) {
+                this.baseX = baseX;
+                this.baseY = baseY;
+                this.axis = axis;
+                this.amp = amp;
+                this.speed = speed;
+                this.x = baseX;
+                this.y = baseY;
+            }
+
+            static Gear horizontal(double baseX, double baseY, double amp, double speed) {
+                return new Gear(baseX, baseY, Axis.HORIZONTAL, amp, speed);
+            }
+
+            static Gear vertical(double baseX, double baseY, double amp, double speed) {
+                return new Gear(baseX, baseY, Axis.VERTICAL, amp, speed);
+            }
+
+            void update(double dt) {
+                t += dt;
+                double offset = Math.sin(t * speed) * amp;
+
+                if (axis == Axis.HORIZONTAL) {
+                    x = baseX + offset;
+                    y = baseY;
+                } else {
+                    x = baseX;
+                    y = baseY + offset;
+                }
+            }
+
+            double getRadius() {
+                return TILE_SIZE * 0.42; // 원형 히트박스 반지름(원하면 조절)
+            }
+
+            // 추가: 원(기어) vs 사각형(플레이어) 충돌
+            boolean collidesWith(Rectangle pr) {
+                double cx = x + TILE_SIZE / 2.0;
+                double cy = y + TILE_SIZE / 2.0;
+                double r = getRadius();
+
+                double nearestX = Math.max(pr.x, Math.min(cx, pr.x + pr.width));
+                double nearestY = Math.max(pr.y, Math.min(cy, pr.y + pr.height));
+
+                double dx = cx - nearestX;
+                double dy = cy - nearestY;
+                return (dx * dx + dy * dy) <= (r * r);
+            }
+        }
+        // ---------------------------------------------------
     }
 
     /**
@@ -1047,7 +1196,7 @@ public class GameCore {
         private static final double DASH_DURATION = 0.25;
 
         // 물리 파라미터
-        private static final double BOUNCE_SPEED    = 280.0;
+        private static final double BOUNCE_SPEED    = 290.0;
         private static final double DASH_SPEED      = 550.0;
         private static final double BLUE_JUMP_SPEED = 450.0;
 
@@ -1208,6 +1357,11 @@ public class GameCore {
 
         public boolean isDashing() {
             return dashActive;
+        }
+
+        // (추가) 기어 충돌 체크용
+        public Rectangle getRect() {
+            return new Rectangle((int)getLeft(), (int)getTop(), (int)getWidth(), (int)getHeight());
         }
     }
 }
